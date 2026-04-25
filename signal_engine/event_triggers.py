@@ -422,12 +422,14 @@ class EventTriggerEngine:
         })
 
     def _check_tail_no_sleeve(self, city: str, bracket: dict, target_date: str, prob: float, market_price: float) -> None:
-        """TAIL_NO: model_prob < 0.40 but market still pricing YES > 0.45."""
-        if prob >= 0.40 or market_price <= 0.45:
+        """TAIL_NO: tightened research sleeve, logged by default but not traded."""
+        if prob >= config.TAIL_NO_PROB_MAX or market_price <= float(config.TAIL_NO_YES_PRICE_MIN):
             return
         no_entry = self._no_entry_price(bracket)
         if no_entry <= 0 or no_entry >= 1:
             return
+        confidence = 40.0
+        gap_pp = (prob - market_price) * 100
         self.db.insert_candidate_signal({
             "city": city,
             "ticker": bracket.get("ticker"),
@@ -437,34 +439,42 @@ class EventTriggerEngine:
             "direction": "NO",
             "yes_price": market_price,
             "model_prob": prob,
-            "gap_pp": (prob - market_price) * 100,
-            "confidence_score": 35.0,
+            "gap_pp": gap_pp,
+            "confidence_score": confidence,
             "would_pass_core": 0,
-            "notes": f"TAIL_NO: model={prob:.3f} market={market_price:.2f} no_entry={no_entry:.2f}",
+            "notes": (
+                f"TAIL_NO candidate: model={prob:.3f}<{config.TAIL_NO_PROB_MAX:.2f} "
+                f"market={market_price:.2f}>{float(config.TAIL_NO_YES_PRICE_MIN):.2f} "
+                f"no_entry={no_entry:.2f}; trade_enabled={config.ENABLE_TAIL_NO_TRADES}"
+            ),
         })
-        # Create paper trade at fixed $2 stake if confidence > 30
+        if not config.ENABLE_TAIL_NO_TRADES:
+            return
         signal = {
             "id": None, "city": city, "ticker": bracket.get("ticker"),
             "target_date": target_date, "bracket": bracket.get("bracket_label"),
             "direction": "NO", "entry_price": no_entry,
             "market_price": market_price, "model_prob": prob,
-            "confidence_score": 35.0, "spread": str(bracket.get("spread") or "0"),
+            "confidence_score": confidence, "spread": str(bracket.get("spread") or "0"),
             "strategy_sleeve": "TAIL_NO",
         }
         signal_id = self.db.insert_signal({
             "city": city, "ticker": bracket.get("ticker"), "target_date": target_date,
             "bracket": bracket.get("bracket_label"), "direction": "NO",
             "entry_price": no_entry, "market_price": market_price,
-            "model_prob": prob, "gap_pp": (prob - market_price) * 100,
-            "confidence_score": 35.0, "strategy_sleeve": "TAIL_NO",
-            "reasoning": f"TAIL_NO: model={prob:.3f}<0.40 market={market_price:.2f}>0.45",
+            "model_prob": prob, "gap_pp": gap_pp,
+            "confidence_score": confidence, "strategy_sleeve": "TAIL_NO",
+            "reasoning": (
+                f"TAIL_NO: model={prob:.3f}<{config.TAIL_NO_PROB_MAX:.2f} "
+                f"market={market_price:.2f}>{float(config.TAIL_NO_YES_PRICE_MIN):.2f}"
+            ),
         })
         signal["id"] = signal_id
         self.paper_trader.on_signal(signal)
 
     def _check_deep_tail_no_sleeve(self, city: str, bracket: dict, target_date: str, prob: float, market_price: float) -> None:
         """DEEP_TAIL_NO: model says < 2% probability but market still > 5¢."""
-        if prob >= 0.02 or market_price <= 0.05:
+        if prob >= config.DEEP_TAIL_NO_PROB_MAX or market_price <= float(config.DEEP_TAIL_NO_YES_PRICE_MIN):
             return
         no_entry = self._no_entry_price(bracket)
         if no_entry <= 0 or no_entry >= 1:
@@ -481,15 +491,23 @@ class EventTriggerEngine:
             "gap_pp": (prob - market_price) * 100,
             "confidence_score": 50.0,
             "would_pass_core": 0,
-            "notes": f"DEEP_TAIL_NO: model={prob:.4f}<0.02 market={market_price:.2f}>0.05",
+            "notes": (
+                f"DEEP_TAIL_NO: model={prob:.4f}<{config.DEEP_TAIL_NO_PROB_MAX:.2f} "
+                f"market={market_price:.2f}>{float(config.DEEP_TAIL_NO_YES_PRICE_MIN):.2f}"
+            ),
         })
+        if not config.ENABLE_DEEP_TAIL_NO_TRADES:
+            return
         signal_id = self.db.insert_signal({
             "city": city, "ticker": bracket.get("ticker"), "target_date": target_date,
             "bracket": bracket.get("bracket_label"), "direction": "NO",
             "entry_price": no_entry, "market_price": market_price,
             "model_prob": prob, "gap_pp": (prob - market_price) * 100,
             "confidence_score": 50.0, "strategy_sleeve": "DEEP_TAIL_NO",
-            "reasoning": f"DEEP_TAIL_NO: model={prob:.4f} near-zero probability",
+            "reasoning": (
+                f"DEEP_TAIL_NO: model={prob:.4f}<{config.DEEP_TAIL_NO_PROB_MAX:.2f} "
+                "near-zero probability"
+            ),
         })
         signal = {
             "id": signal_id, "city": city, "ticker": bracket.get("ticker"),

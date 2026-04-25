@@ -16,6 +16,10 @@ from data_ingest.kalshi_client import KalshiClient
 logger = logging.getLogger(__name__)
 
 
+class OrderbookSequenceGap(RuntimeError):
+    """Raised when a WebSocket sequence gap makes local books untrustworthy."""
+
+
 class KalshiOrderBook:
     def __init__(self, ticker: str):
         self.ticker = ticker
@@ -120,7 +124,11 @@ class KalshiOrderbookManager:
             return
         seq = msg.get("seq")
         if seq is not None and self.last_seq is not None and seq > self.last_seq + 1:
-            logger.warning("Kalshi stream sequence gap: expected %s, got %s", self.last_seq + 1, seq)
+            expected = self.last_seq + 1
+            logger.warning("Kalshi stream sequence gap: expected %s, got %s; reconnecting for fresh snapshots", expected, seq)
+            self._invalidate_books()
+            self.last_seq = None
+            raise OrderbookSequenceGap(f"expected seq {expected}, got {seq}")
         if seq is not None:
             self.last_seq = seq
         book = self.books.setdefault(ticker, KalshiOrderBook(ticker))
@@ -147,6 +155,13 @@ class KalshiOrderbookManager:
                     "source": "websocket",
                 }
             )
+
+    def _invalidate_books(self) -> None:
+        for book in self.books.values():
+            book.yes_bids.clear()
+            book.no_bids.clear()
+            book.last_seq = None
+            book.connected = False
 
     def get_current_price(self, ticker: str) -> Decimal:
         return self.books.get(ticker, KalshiOrderBook(ticker)).best_yes_bid

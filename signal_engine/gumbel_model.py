@@ -91,6 +91,7 @@ class GumbelModel:
 
     def compute_consensus_from_wethr(self, model_forecasts: Dict[str, float], target_date: Optional[str] = None) -> Optional[float]:
         corrected = []
+        weighted = []
         month = None
         if target_date:
             month = datetime.strptime(target_date, "%Y-%m-%d").month
@@ -106,8 +107,15 @@ class GumbelModel:
             elif model_upper == "HRRR" and month in (6, 7, 8):
                 adjusted += config.HRRR_SUMMER_BIAS
             corrected.append(adjusted)
+            weight = config.FALLBACK_ENSEMBLE_WEIGHTS.get(model_upper)
+            if weight is not None:
+                weighted.append((adjusted, float(weight)))
         if not corrected:
             return None
+        if weighted:
+            total_weight = sum(weight for _, weight in weighted)
+            if total_weight > 0:
+                return float(sum(value * weight for value, weight in weighted) / total_weight)
         return float(np.mean(corrected))
 
     def compute_all_bracket_probs(

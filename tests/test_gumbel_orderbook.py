@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from kalshi_watcher.orderbook import KalshiOrderBook
+import pytest
+
+from kalshi_watcher.orderbook import KalshiOrderBook, KalshiOrderbookManager, OrderbookSequenceGap
 from signal_engine.gumbel_model import GumbelModel
 
 
@@ -42,3 +44,25 @@ def test_orderbook_delta_updates_levels():
     book.apply_snapshot({"seq": 1, "msg": {"yes_dollars_fp": [["0.40", "10"]], "no_dollars_fp": []}})
     book.apply_delta({"seq": 2, "msg": {"side": "yes", "price_dollars": "0.41", "delta_fp": "5"}})
     assert book.best_yes_bid == Decimal("0.41")
+
+
+def test_orderbook_sequence_gap_invalidates_and_raises():
+    manager = KalshiOrderbookManager("", "")
+    manager.handle_message(
+        {
+            "type": "orderbook_snapshot",
+            "seq": 1,
+            "msg": {"market_ticker": "T", "yes_dollars_fp": [["0.40", "10"]], "no_dollars_fp": []},
+        }
+    )
+    assert manager.get_current_price("T") == Decimal("0.40")
+    with pytest.raises(OrderbookSequenceGap):
+        manager.handle_message(
+            {
+                "type": "orderbook_delta",
+                "seq": 3,
+                "msg": {"market_ticker": "T", "side": "yes", "price_dollars": "0.41", "delta_fp": "5"},
+            }
+        )
+    assert manager.books["T"].connected is False
+    assert manager.get_current_price("T") == Decimal("0")

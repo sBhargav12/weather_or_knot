@@ -11,7 +11,7 @@ import config
 #
 # TIER 1 — Hard requirements. All must pass to generate a signal.
 #   Gate 1: Model convergence (HGEFS or wethr-proxy)
-#   Gate 2: Gumbel gap >= 15pp (reduced from 20pp for paper-trading phase)
+#   Gate 2: Gumbel gap >= config.MIN_GAP_PP
 #   Gate 3: Price band 0.25–0.75
 #
 # TIER 2 — Confidence modifiers only. Never block a signal.
@@ -29,8 +29,8 @@ import config
 _GATE1_MAX_SPREAD_BETWEEN = config.HGEFS_MAX_SPREAD_BETWEEN      # 1.5°F
 _GATE1_MAX_SUBSET_SPREAD = config.HGEFS_MAX_SUBSET_SPREAD         # 3.0°F
 _GATE1_PROXY_MAX_STD = 2.5                                         # wethr-proxy threshold
-_GATE2_MIN_GAP_HARD = 15.0                                         # hard floor (pp)
-_GATE2_MIN_GAP_FULL = config.MIN_GAP_PP                           # 20pp for full confidence
+_GATE2_MIN_GAP_HARD = config.MIN_GAP_PP                            # strict hard floor (pp)
+_GATE2_HIGH_CONFIDENCE_GAP = config.MIN_GAP_PP + 5.0
 
 
 def check_gate_1(
@@ -99,7 +99,7 @@ def check_gate_1(
 
 
 def check_gate_2(model_prob: float, market_price: float) -> Tuple[bool, dict]:
-    """TIER 1. Pass if abs(gap) > 15pp and not in dead zone."""
+    """TIER 1. Pass if abs(gap) exceeds the configured edge floor and dead zone."""
     gap_pp = (float(model_prob) - float(market_price)) * 100
     direction = "YES" if gap_pp > 0 else "NO"
     abs_gap = abs(gap_pp)
@@ -108,7 +108,7 @@ def check_gate_2(model_prob: float, market_price: float) -> Tuple[bool, dict]:
     in_dead_zone = config.DEAD_ZONE_LO <= abs_gap <= config.DEAD_ZONE_HI
     gate_pass = abs_gap > _GATE2_MIN_GAP_HARD and not in_dead_zone
 
-    if abs_gap > _GATE2_MIN_GAP_FULL:
+    if abs_gap > _GATE2_HIGH_CONFIDENCE_GAP:
         confidence_add = 30.0
     elif abs_gap > _GATE2_MIN_GAP_HARD:
         confidence_add = 20.0

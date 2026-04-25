@@ -32,9 +32,21 @@ STOP_LOSS_DIFF = Decimal("0.20")
 MIN_YES_PRICE = Decimal("0.25")
 MAX_YES_PRICE = Decimal("0.75")
 NEVER_HOLD_ABOVE = Decimal("0.70")
-MIN_GAP_PP = 20.0
+# Strict backtest v2 favored a higher production baseline than the old 15/20pp
+# paper-trading gate. Keep the 35-40pp dead zone below as a separate hard block.
+MIN_GAP_PP = 25.0
 DEAD_ZONE_LO = 35.0
 DEAD_ZONE_HI = 40.0
+
+# Research sleeves from scripts/backtest.py. TAIL_NO is logged for research only
+# until it survives stricter walk-forward/slippage tests; DEEP_TAIL_NO remains
+# paper-traded because it held up best in the exchange-settlement backtest.
+TAIL_NO_PROB_MAX = 0.30
+TAIL_NO_YES_PRICE_MIN = Decimal("0.55")
+ENABLE_TAIL_NO_TRADES = False
+DEEP_TAIL_NO_PROB_MAX = 0.02
+DEEP_TAIL_NO_YES_PRICE_MIN = Decimal("0.05")
+ENABLE_DEEP_TAIL_NO_TRADES = True
 
 # Gumbel parameters
 GUMBEL_MU_CORRECTION = -0.45
@@ -44,6 +56,15 @@ ECMWF_BIAS = -0.42
 GFS_MAE = 1.58
 GFS_BIAS = 0.47
 HRRR_SUMMER_BIAS = -1.5
+
+# Fallback-only Open-Meteo/wethr weights learned from the exchange-settlement
+# KXHIGHNY backtest. Real HGEFS remains the primary model whenever available.
+FALLBACK_ENSEMBLE_WEIGHTS = {
+    "GFS": 0.3575441093,
+    "ECMWF": 0.2121428382,
+    "UKMO": 0.1938071607,
+    "NBM": 0.2365058918,
+}
 
 # Gate thresholds
 HGEFS_MAX_SPREAD_BETWEEN = 1.5

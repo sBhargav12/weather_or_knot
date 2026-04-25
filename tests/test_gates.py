@@ -54,28 +54,28 @@ def test_gate_1_insufficient_models():
 
 
 # ---------------------------------------------------------------------------
-# Gate 2 — TIER 1 (hard requirement, gap >= 15pp)
+# Gate 2 — TIER 1 (hard requirement, gap > config.MIN_GAP_PP)
 # ---------------------------------------------------------------------------
 
-def test_gate_2_gap_above_20pp():
-    passed, d = check_gate_2(0.71, 0.50)
+def test_gate_2_gap_above_30pp_high_confidence():
+    passed, d = check_gate_2(0.81, 0.50)
     assert passed is True
     assert d["confidence_add"] == 30.0
 
 
-def test_gate_2_gap_15_to_20pp():
-    passed, d = check_gate_2(0.66, 0.50)   # gap = 16pp
+def test_gate_2_gap_25_to_30pp():
+    passed, d = check_gate_2(0.76, 0.50)   # gap = 26pp
     assert passed is True
     assert d["confidence_add"] == 20.0
 
 
-def test_gate_2_gap_below_15pp():
-    passed, d = check_gate_2(0.64, 0.50)   # gap = 14pp
+def test_gate_2_gap_below_configured_floor():
+    passed, d = check_gate_2(0.74, 0.50)   # gap = 24pp
     assert passed is False
 
 
 def test_gate_2_no_direction():
-    passed, details = check_gate_2(0.29, 0.50)
+    passed, details = check_gate_2(0.24, 0.50)
     assert passed is True
     assert details["direction"] == "NO"
 
@@ -175,7 +175,7 @@ def test_run_all_gates_good_values_real_hgefs():
         physics_spread=2.0,
         ai_mean=70.5,
         ai_spread=2.0,
-        model_prob=0.72,
+        model_prob=0.77,
         market_price=0.50,
         yes_price=0.50,
         metar_temp_f=64.0,
@@ -197,7 +197,7 @@ def test_run_all_gates_wethr_proxy_passes_with_tight_models():
         physics_spread=None,
         ai_mean=None,
         ai_spread=None,
-        model_prob=0.72,
+        model_prob=0.77,
         market_price=0.50,
         yes_price=0.50,
         metar_temp_f=64.0,
@@ -219,9 +219,9 @@ def test_run_all_gates_bad_hgefs_no_proxy_fails():
     assert result["skip_reason"] == "gate1_fail"
 
 
-def test_run_all_gates_gap_below_15pp_fails():
-    # gap = 14pp — below new 15pp hard floor
-    result = run_all_gates(70, 2, 70.5, 2, 0.64, 0.50, 0.50, 64, 70, 69, "YES", [], "T")
+def test_run_all_gates_gap_below_configured_floor_fails():
+    # gap = 24pp — below the 25pp production floor
+    result = run_all_gates(70, 2, 70.5, 2, 0.74, 0.50, 0.50, 64, 70, 69, "YES", [], "T")
     assert result["all_pass"] is False
     assert result["skip_reason"] == "gate2_fail"
 
