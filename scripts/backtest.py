@@ -36,12 +36,25 @@ OPEN_METEO_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 NY_TZ = ZoneInfo("America/New_York")
 START_DATE = date(2024, 10, 1)
 END_DATE = date(2026, 4, 25)
+DEFAULT_CORE_GAP_PP = 25.0
+DEFAULT_ENTRY_TIMING = "9AM"
+TAIL_NO_PROB_MAX = 0.30
+TAIL_NO_YES_PRICE_MIN = 0.55
+DEEP_TAIL_NO_PROB_MAX = 0.02
+DEEP_TAIL_NO_YES_PRICE_MIN = 0.05
 
 MODEL_COLUMNS = {
     "gfs": "gfs_maxt",
     "ecmwf": "ecmwf_maxt",
     "ukmo": "ukmo_maxt",
     "nbm": "nbm_maxt",
+}
+
+FIXED_ENSEMBLE_WEIGHTS = {
+    "ecmwf": 0.35,
+    "gfs": 0.25,
+    "ukmo": 0.20,
+    "nbm": 0.20,
 }
 
 ENTRY_TIMES = {
@@ -148,6 +161,17 @@ def resolved_yes(actual_temp: float, lo: Optional[float], hi: Optional[float], b
     return lo is not None and hi is not None and lo <= actual_temp <= hi
 
 
+def kalshi_result_yes(value: Any) -> Optional[bool]:
+    if value is None or pd.isna(value):
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"yes", "1", "true"}:
+        return True
+    if normalized in {"no", "0", "false"}:
+        return False
+    return None
+
+
 def gumbel_prob(lo: Optional[float], hi: Optional[float], btype: str, consensus: float) -> float:
     mu = consensus - 0.45
     beta = 0.742
@@ -206,6 +230,13 @@ def summarize_trades(df: pd.DataFrame) -> dict:
         "max_drawdown": max_drawdown(df["net"]),
         "avg_return": float((df["net"] / df["entry_price"].replace(0, np.nan)).mean()),
     }
+
+
+def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
+    total = sum(float(value) for value in weights.values() if np.isfinite(value))
+    if total <= 0:
+        return dict(FIXED_ENSEMBLE_WEIGHTS)
+    return {key: float(value) / total for key, value in weights.items()}
 
 
 def fetch_kalshi_markets() -> pd.DataFrame:
@@ -512,8 +543,10 @@ def load_or_fetch(refresh: bool) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFra
 
 @dataclass
 class BacktestConfig:
-    gap_threshold: float = 15.0
-    entry_timing: str = "11AM"
+    gap_threshold: float = DEFAULT_CORE_GAP_PP
+    entry_timing: str = DEFAULT_ENTRY_TIMING
+    ensemble_weights: Optional[dict[str, float]] = None
+    label: str = "fixed_weights"
 
 
 class BacktestEngine:
@@ -531,6 +564,15 @@ class BacktestEngine:
         markets["cap_strike"] = pd.to_numeric(markets["cap_strike"], errors="coerce")
         markets["bracket_type"] = markets.apply(lambda row: bracket_type(row["floor_strike"], row["cap_strike"]), axis=1)
         markets["bracket"] = markets.apply(bracket_label, axis=1)
+        markets["kalshi_result_yes"] = markets["settlement_value"].apply(kalshi_result_yes)
+        markets["raw_settlement_temp"] = pd.to_numeric(markets.get("raw_settlement_temp"), errors="coerce")
+        settlement_by_date = (
+            markets.dropna(subset=["raw_settlement_temp"])
+            .groupby("target_date")["raw_settlement_temp"]
+            .first()
+            .rename("kalshi_settlement_temp")
+        )
+        markets = markets.merge(settlement_by_date, on="target_date", how="left")
 
         prices = self.prices.copy()
         prices["target_date"] = prices["target_date"].astype(str)
@@ -545,25 +587,27 @@ class BacktestEngine:
         df = df.merge(actuals[["target_date", "max_temp_f"]], on="target_date", how="left")
         df = df.merge(models[["target_date", *MODEL_COLUMNS.values()]], on="target_date", how="left")
         df["max_temp_f"] = pd.to_numeric(df["max_temp_f"], errors="coerce")
+        df["kalshi_settlement_temp"] = pd.to_numeric(df.get("kalshi_settlement_temp"), errors="coerce")
         return df
 
     def model_stats(self) -> pd.DataFrame:
-        day_df = self.dataset.drop_duplicates("target_date").dropna(subset=["max_temp_f"])
+        day_df = self.dataset.drop_duplicates("target_date").dropna(subset=["kalshi_settlement_temp"])
         rows = []
         for name, col in MODEL_COLUMNS.items():
             valid = day_df.dropna(subset=[col])
             if valid.empty:
                 continue
-            err = valid[col] - valid["max_temp_f"]
+            err = valid[col] - valid["kalshi_settlement_temp"]
             rows.append({"model": name, "mae": float(err.abs().mean()), "bias": float(err.mean())})
         return pd.DataFrame(rows)
 
     def run(self, cfg: BacktestConfig) -> pd.DataFrame:
         rows = []
         entry_col = f"yes_price_{cfg.entry_timing}"
+        weights = normalize_weights(cfg.ensemble_weights or FIXED_ENSEMBLE_WEIGHTS)
         required = [
             entry_col,
-            "max_temp_f",
+            "kalshi_result_yes",
             "gfs_maxt",
             "ecmwf_maxt",
             "ukmo_maxt",
@@ -581,7 +625,12 @@ class BacktestEngine:
             physics_spread = float(np.std(physics_models))
             ai_mean = float(np.mean(ai_models))
             ai_spread = float(np.std(ai_models))
-            consensus = 0.35 * ecmwf + 0.25 * gfs + 0.20 * ukmo + 0.20 * nbm
+            consensus = (
+                weights["ecmwf"] * ecmwf
+                + weights["gfs"] * gfs
+                + weights["ukmo"] * ukmo
+                + weights["nbm"] * nbm
+            )
             lo = None if pd.isna(row["floor_strike"]) else float(row["floor_strike"])
             hi = None if pd.isna(row["cap_strike"]) else float(row["cap_strike"])
             btype = str(row["bracket_type"])
@@ -592,43 +641,65 @@ class BacktestEngine:
             gate1 = physics_spread < 3.0 and ai_spread < 3.0 and abs(physics_mean - ai_mean) < 2.5
             gate2 = gap_abs > cfg.gap_threshold and not (35.0 <= gap_abs <= 40.0)
             gate3 = 0.25 <= market_price <= 0.75
-            confidence = 50
-            if gate1 and physics_spread < 1.5:
-                confidence += 30
-            elif gate1:
-                confidence += 15
-            if gap_abs > 20:
-                confidence += 30
-            elif gap_abs > 15:
-                confidence += 20
-            confidence = min(confidence, 100)
-            actual_temp = float(row["max_temp_f"])
-            bracket_yes = resolved_yes(actual_temp, lo, hi, btype)
+            actual_temp = float(row["max_temp_f"]) if not pd.isna(row.get("max_temp_f")) else np.nan
+            kalshi_settlement_temp = (
+                float(row["kalshi_settlement_temp"]) if not pd.isna(row.get("kalshi_settlement_temp")) else np.nan
+            )
+            bracket_yes = bool(row["kalshi_result_yes"])
+            reconstructed_yes = (
+                resolved_yes(actual_temp, lo, hi, btype) if np.isfinite(actual_temp) else None
+            )
+            settlement_mismatch = (
+                reconstructed_yes is not None
+                and bool(reconstructed_yes) != bracket_yes
+            )
 
             if gate1 and gate2 and gate3:
                 direction = "YES" if gap_pp > 0 else "NO"
+                entry_price = market_price if direction == "YES" else 1.0 - market_price
+                confidence = self._confidence_score(
+                    gap_abs,
+                    entry_price,
+                    physics_spread,
+                    ai_spread,
+                    abs(physics_mean - ai_mean),
+                    btype,
+                )
                 self._append_trade(
                     rows,
                     row,
                     "CORE",
                     direction,
-                    market_price if direction == "YES" else 1.0 - market_price,
+                    entry_price,
                     cfg.entry_timing,
                     confidence,
                     gap_pp,
                     p_yes,
                     bracket_yes,
+                    reconstructed_yes,
+                    settlement_mismatch,
                     actual_temp,
+                    kalshi_settlement_temp,
                     consensus,
                     physics_mean,
                     physics_spread,
                     ai_mean,
                     ai_spread,
+                    weights,
+                    cfg.label,
                 )
 
             yes_bid_proxy = max(0.0, market_price - 0.02)
             no_entry = min(1.0, max(0.0, 1.0 - yes_bid_proxy))
-            if p_yes < 0.40 and market_price > 0.45:
+            sleeve_confidence = self._confidence_score(
+                gap_abs,
+                no_entry,
+                physics_spread,
+                ai_spread,
+                abs(physics_mean - ai_mean),
+                btype,
+            )
+            if p_yes < TAIL_NO_PROB_MAX and market_price > TAIL_NO_YES_PRICE_MIN:
                 self._append_trade(
                     rows,
                     row,
@@ -636,18 +707,23 @@ class BacktestEngine:
                     "NO",
                     no_entry,
                     cfg.entry_timing,
-                    confidence,
+                    sleeve_confidence,
                     gap_pp,
                     p_yes,
                     bracket_yes,
+                    reconstructed_yes,
+                    settlement_mismatch,
                     actual_temp,
+                    kalshi_settlement_temp,
                     consensus,
                     physics_mean,
                     physics_spread,
                     ai_mean,
                     ai_spread,
+                    weights,
+                    cfg.label,
                 )
-            if p_yes < 0.02 and market_price > 0.05:
+            if p_yes < DEEP_TAIL_NO_PROB_MAX and market_price > DEEP_TAIL_NO_YES_PRICE_MIN:
                 self._append_trade(
                     rows,
                     row,
@@ -655,18 +731,39 @@ class BacktestEngine:
                     "NO",
                     no_entry,
                     cfg.entry_timing,
-                    confidence,
+                    sleeve_confidence,
                     gap_pp,
                     p_yes,
                     bracket_yes,
+                    reconstructed_yes,
+                    settlement_mismatch,
                     actual_temp,
+                    kalshi_settlement_temp,
                     consensus,
                     physics_mean,
                     physics_spread,
                     ai_mean,
                     ai_spread,
+                    weights,
+                    cfg.label,
                 )
         return pd.DataFrame(rows)
+
+    @staticmethod
+    def _confidence_score(
+        gap_abs: float,
+        entry_price: float,
+        physics_spread: float,
+        ai_spread: float,
+        spread_between: float,
+        btype: str,
+    ) -> float:
+        edge_score = min(40.0, max(0.0, (gap_abs - 10.0) / 30.0 * 40.0))
+        agreement_score = min(25.0, max(0.0, (2.5 - spread_between) / 2.5 * 25.0))
+        spread_score = min(20.0, max(0.0, (3.0 - ((physics_spread + ai_spread) / 2.0)) / 3.0 * 20.0))
+        price_score = 10.0 if entry_price < 0.40 or entry_price > 0.60 else 0.0
+        bracket_score = 5.0 if btype != "central" else 0.0
+        return round(float(min(100.0, edge_score + agreement_score + spread_score + price_score + bracket_score)), 2)
 
     @staticmethod
     def _append_trade(
@@ -680,12 +777,17 @@ class BacktestEngine:
         gap_pp: float,
         model_prob: float,
         bracket_yes: bool,
+        reconstructed_yes: Optional[bool],
+        settlement_mismatch: bool,
         actual_temp: float,
+        kalshi_settlement_temp: float,
         consensus: float,
         physics_mean: float,
         physics_spread: float,
         ai_mean: float,
         ai_spread: float,
+        weights: dict[str, float],
+        model_weight_source: str,
     ) -> None:
         win = (direction == "YES" and bracket_yes) or (direction == "NO" and not bracket_yes)
         gross = (1.0 - entry_price) if win else -entry_price
@@ -703,7 +805,15 @@ class BacktestEngine:
                 "entry_timing": entry_timing,
                 "confidence": confidence,
                 "model_prob": model_prob,
+                "kalshi_result_yes": bracket_yes,
+                "reconstructed_result_yes": reconstructed_yes,
+                "settlement_mismatch": settlement_mismatch,
                 "consensus": consensus,
+                "model_weight_source": model_weight_source,
+                "weight_gfs": weights["gfs"],
+                "weight_ecmwf": weights["ecmwf"],
+                "weight_ukmo": weights["ukmo"],
+                "weight_nbm": weights["nbm"],
                 "physics_mean": physics_mean,
                 "physics_spread": physics_spread,
                 "ai_mean": ai_mean,
@@ -713,7 +823,7 @@ class BacktestEngine:
                 "fee": fee,
                 "net": net,
                 "actual_temp": actual_temp,
-                "settlement_temp": actual_temp,
+                "settlement_temp": kalshi_settlement_temp,
                 "month": str(row["target_date"])[:7],
             }
         )
@@ -722,7 +832,7 @@ class BacktestEngine:
 def sensitivity(engine: BacktestEngine) -> dict:
     rows = {}
     for threshold in [10, 15, 20, 25, 30]:
-        trades = engine.run(BacktestConfig(gap_threshold=float(threshold), entry_timing="11AM"))
+        trades = engine.run(BacktestConfig(gap_threshold=float(threshold), entry_timing=DEFAULT_ENTRY_TIMING))
         core = trades[trades["sleeve"] == "CORE"] if not trades.empty else trades
         rows[f"gap_gt_{threshold}pp"] = summarize_trades(core)
     return rows
@@ -731,7 +841,7 @@ def sensitivity(engine: BacktestEngine) -> dict:
 def timing_comparison(engine: BacktestEngine) -> dict:
     rows = {}
     for timing in ["9AM", "11AM", "1PM", "3PM"]:
-        trades = engine.run(BacktestConfig(gap_threshold=15.0, entry_timing=timing))
+        trades = engine.run(BacktestConfig(gap_threshold=DEFAULT_CORE_GAP_PP, entry_timing=timing))
         core = trades[trades["sleeve"] == "CORE"] if not trades.empty else trades
         rows[timing] = summarize_trades(core)
     return rows
@@ -747,12 +857,33 @@ def monthly_breakdown(core: pd.DataFrame) -> dict:
 
 
 def confidence_breakdown(core: pd.DataFrame) -> dict:
+    if core.empty:
+        return {
+            "top_decile": summarize_trades(core),
+            "top_quartile": summarize_trades(core),
+            "middle_50pct": summarize_trades(core),
+            "bottom_quartile": summarize_trades(core),
+        }
+    q10 = core["confidence"].quantile(0.90)
+    q75 = core["confidence"].quantile(0.75)
+    q25 = core["confidence"].quantile(0.25)
     bands = {
-        "score_ge_80": core[core["confidence"] >= 80] if not core.empty else core,
-        "score_60_79": core[(core["confidence"] >= 60) & (core["confidence"] < 80)] if not core.empty else core,
-        "score_40_59": core[(core["confidence"] >= 40) & (core["confidence"] < 60)] if not core.empty else core,
+        "top_decile": core[core["confidence"] >= q10],
+        "top_quartile": core[core["confidence"] >= q75],
+        "middle_50pct": core[(core["confidence"] > q25) & (core["confidence"] < q75)],
+        "bottom_quartile": core[core["confidence"] <= q25],
     }
     return {name: summarize_trades(group) for name, group in bands.items()}
+
+
+def entry_price_breakdown(core: pd.DataFrame) -> dict:
+    if core.empty:
+        return {}
+    bins = [0.0, 0.25, 0.40, 0.50, 0.60, 0.75, 1.0]
+    labels = ["0.00-0.25", "0.25-0.40", "0.40-0.50", "0.50-0.60", "0.60-0.75", "0.75-1.00"]
+    work = core.copy()
+    work["entry_bucket"] = pd.cut(work["entry_price"], bins=bins, labels=labels, include_lowest=True, right=False)
+    return {str(bucket): summarize_trades(group) for bucket, group in work.groupby("entry_bucket", observed=True)}
 
 
 def inverse_mae_weights(model_stats: pd.DataFrame) -> dict:
@@ -782,6 +913,14 @@ def seasonal_multipliers(monthly: dict) -> dict:
 def print_summary(summary: dict) -> None:
     core = summary["core"]
     print("\n=== BACKTEST RESULTS: Oct 2024 - Apr 2026 ===\n")
+    print("METHODOLOGY:")
+    print("  Settlement/P&L source: Kalshi market result field")
+    print("  IEM KNYC temperatures: diagnostics/model-error analysis only")
+    print("  Forecast vintage warning: Open-Meteo file has one daily row, so timing tests reuse same forecast values")
+    print(f"  Baseline run: gap > {summary['baseline']['gap_threshold_pp']}pp, entry {summary['baseline']['entry_timing']}")
+    print(f"  Model weights traded: {summary['baseline']['ensemble_weights']}")
+    print(f"  TAIL_NO rule: P_yes < {TAIL_NO_PROB_MAX:.2f} and YES price > {TAIL_NO_YES_PRICE_MIN:.2f}")
+    print(f"  DEEP_TAIL_NO rule: P_yes < {DEEP_TAIL_NO_PROB_MAX:.2f} and YES price > {DEEP_TAIL_NO_YES_PRICE_MIN:.2f}")
     print("CORE STRATEGY (Gumbel + Tiered Gates):")
     print(f"  Total days analyzed: {summary['total_days_analyzed']}")
     print(f"  Trading days (signals generated): {summary['trading_days']}")
@@ -794,13 +933,13 @@ def print_summary(summary: dict) -> None:
     print("\nSENSITIVITY: Gap threshold")
     for threshold in [10, 15, 20, 25, 30]:
         item = summary["sensitivity"][f"gap_gt_{threshold}pp"]
-        suffix = "  <- current threshold" if threshold == 20 else ""
+        suffix = "  <- baseline threshold" if threshold == summary["baseline"]["gap_threshold_pp"] else ""
         print(f"  Gap > {threshold}pp: win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}{suffix}")
 
     print("\nENTRY TIMING comparison:")
     for timing in ["9AM", "11AM", "1PM", "3PM"]:
         item = summary["entry_timing"][timing]
-        suffix = "  <- requested/current test point" if timing == "11AM" else ""
+        suffix = "  <- baseline timing" if timing == summary["baseline"]["entry_timing"] else ""
         print(f"  {timing} entry: win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}{suffix}")
 
     print("\nSEASONAL breakdown:")
@@ -809,13 +948,18 @@ def print_summary(summary: dict) -> None:
 
     print("\nCONFIDENCE SCORE validation:")
     labels = {
-        "score_ge_80": "Score >= 80",
-        "score_60_79": "Score 60-79",
-        "score_40_59": "Score 40-59",
+        "top_decile": "Top decile",
+        "top_quartile": "Top quartile",
+        "middle_50pct": "Middle 50%",
+        "bottom_quartile": "Bottom quartile",
     }
     for key, label in labels.items():
         item = summary["confidence"][key]
         print(f"  {label}: {item['trades']} trades, win rate {item['win_rate']:.1%}")
+
+    print("\nENTRY PRICE BUCKETS (core):")
+    for bucket, item in summary["entry_price_buckets"].items():
+        print(f"  {bucket}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
 
     print("\nMODEL ACCURACY for KNYC:")
     for item in summary["model_accuracy"]:
@@ -835,6 +979,11 @@ def print_summary(summary: dict) -> None:
     print(f"  Best entry timing: {summary['optimal']['best_entry_timing']}")
     print(f"  Best seasonal multipliers: {summary['optimal']['seasonal_kelly_multiplier']}")
     print(f"  Model weights (by MAE inverse): {summary['optimal']['ensemble_weights']}")
+    print("\nMODEL WEIGHT COMPARISON:")
+    for name, item in summary["weight_comparison"].items():
+        print(f"  {name}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
+    print("\nSETTLEMENT CROSS-CHECK:")
+    print(f"  Trades where IEM reconstruction disagreed with Kalshi result: {summary['settlement_mismatches']}")
     print(f"\nSaved full trade-by-trade results to {RESULTS_CSV}")
     print(f"Saved summary to {SUMMARY_JSON}")
 
@@ -843,34 +992,61 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
     core = trades[trades["sleeve"] == "CORE"] if not trades.empty else trades
     model_stats = engine.model_stats()
     model_accuracy = model_stats.to_dict(orient="records")
+    learned_weights = inverse_mae_weights(model_stats)
     best_model = str(model_stats.sort_values("mae").iloc[0]["model"]).upper() if not model_stats.empty else "N/A"
     sensitivity_rows = sensitivity(engine)
     timing_rows = timing_comparison(engine)
     seasonal = monthly_breakdown(core)
     confidence = confidence_breakdown(core)
+    entry_buckets = entry_price_breakdown(core)
     sleeves = {
         "TAIL_NO": summarize_trades(trades[trades["sleeve"] == "TAIL_NO"]) if not trades.empty else summarize_trades(trades),
         "DEEP_TAIL_NO": summarize_trades(trades[trades["sleeve"] == "DEEP_TAIL_NO"]) if not trades.empty else summarize_trades(trades),
     }
+    learned_trades = engine.run(
+        BacktestConfig(
+            gap_threshold=DEFAULT_CORE_GAP_PP,
+            entry_timing=DEFAULT_ENTRY_TIMING,
+            ensemble_weights=learned_weights,
+            label="inverse_mae_weights",
+        )
+    )
+    learned_core = learned_trades[learned_trades["sleeve"] == "CORE"] if not learned_trades.empty else learned_trades
     best_gap_key = max(sensitivity_rows, key=lambda key: sensitivity_rows[key]["net_pnl"])
     best_timing = max(timing_rows, key=lambda key: timing_rows[key]["net_pnl"])
     return {
         "period": {"start": START_DATE.isoformat(), "end": END_DATE.isoformat()},
-        "total_days_analyzed": int(engine.dataset.dropna(subset=["max_temp_f", *MODEL_COLUMNS.values()])["target_date"].nunique()),
+        "baseline": {
+            "gap_threshold_pp": int(DEFAULT_CORE_GAP_PP),
+            "entry_timing": DEFAULT_ENTRY_TIMING,
+            "ensemble_weights": dict(FIXED_ENSEMBLE_WEIGHTS),
+        },
+        "methodology_notes": [
+            "P&L is settled from Kalshi market result, not reconstructed IEM temperature.",
+            "Open-Meteo historical dataset is daily-only; entry timing tests reuse the same model forecast values and vary market price only.",
+            "Inverse-MAE weights are reported and compared, but fixed strategy weights remain the baseline unless explicitly selected.",
+        ],
+        "total_days_analyzed": int(engine.dataset.dropna(subset=["kalshi_result_yes", *MODEL_COLUMNS.values()])["target_date"].nunique()),
         "trading_days": int(core["date"].nunique()) if not core.empty else 0,
         "core": summarize_trades(core),
         "sensitivity": sensitivity_rows,
         "entry_timing": timing_rows,
         "seasonal": seasonal,
         "confidence": confidence,
+        "entry_price_buckets": entry_buckets,
         "model_accuracy": model_accuracy,
         "best_model": best_model,
         "sleeves": sleeves,
+        "weight_comparison": {
+            "fixed_weights_baseline": summarize_trades(core),
+            "inverse_mae_weights": summarize_trades(learned_core),
+        },
+        "settlement_mismatches": int(trades["settlement_mismatch"].sum()) if not trades.empty else 0,
         "optimal": {
             "best_gap_threshold_pp": int(best_gap_key.split("_")[-1].replace("pp", "")),
             "best_entry_timing": best_timing,
             "seasonal_kelly_multiplier": seasonal_multipliers(seasonal),
-            "ensemble_weights": inverse_mae_weights(model_stats),
+            "ensemble_weights": learned_weights,
         },
     }
 
@@ -888,7 +1064,7 @@ def main() -> int:
 
     markets, prices, actuals, models = load_or_fetch(refresh=args.refresh and not args.skip_fetch)
     engine = BacktestEngine(markets, prices, actuals, models)
-    trades = engine.run(BacktestConfig(gap_threshold=15.0, entry_timing="11AM"))
+    trades = engine.run(BacktestConfig())
     trades.to_csv(RESULTS_CSV, index=False)
     summary = build_summary(engine, trades)
     SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True))
