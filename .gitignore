@@ -1,6 +1,17 @@
 .DS_Store
 .env
 
+# Security — never commit credentials or keys
+keys/
+*.pem
+
+# Pipeline runtime artifacts
+logs/
+data/pipeline.db
+
+# Misc
+*.docx
+
 # Python-generated files
 __pycache__/
 *.py[oc]

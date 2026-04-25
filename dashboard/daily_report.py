@@ -51,6 +51,12 @@ def print_gate_summary(db_path: str, report_date: str | None = None) -> str:
         "Gate 5 (METAR)": sum(1 for row in rows if row["gate5_pass"] == 0),
         "Gate 6 (reversal)": sum(1 for row in rows if row["gate6_pass"] == 0),
     }
+    real_aigefs = sum(1 for row in rows if row["gate1_ai_source"] == "aigefs_real")
+    wethr_proxy = sum(1 for row in rows if row["gate1_ai_source"] == "wethr_proxy")
     lines = ["GATE FAILURES TODAY"]
     lines.extend(f"  {label}: {count}" for label, count in summary.items())
+    lines.append("")
+    lines.append("GATE 1 AI SOURCE")
+    lines.append(f"  aigefs_real: {real_aigefs} checks")
+    lines.append(f"  wethr_proxy: {wethr_proxy} checks")
     return "\n".join(lines)

@@ -113,7 +113,8 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             gate6_is_cold_bracket INTEGER,
             all_pass INTEGER,
             signal_generated INTEGER,
-            skip_reason TEXT
+            skip_reason TEXT,
+            gate1_ai_source TEXT
         );
 
         CREATE TABLE IF NOT EXISTS signals (
@@ -242,6 +243,8 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             gate2_failures INTEGER DEFAULT 0,
             gate5_failures INTEGER DEFAULT 0,
             gate6_failures INTEGER DEFAULT 0,
+            gate1_real_aigefs_count INTEGER DEFAULT 0,
+            gate1_proxy_count INTEGER DEFAULT 0,
             notes TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
         );

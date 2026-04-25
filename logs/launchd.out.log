@@ -76,3 +76,142 @@ Database created/verified at data/pipeline.db
 2026-04-25 05:15:01,183 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/00/text/blend_nbetx.t00z
 2026-04-25 05:15:01,240 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/00/text/blend_nbstx.t00z
 2026-04-25 05:15:01,507 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: timed out during opening handshake. Reconnecting in 1s
+2026-04-25 05:45:11,424 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 05:45:11,444 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 05:45:11,464 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 05:45:11,507 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbptx.t12z
+2026-04-25 05:45:11,528 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbetx.t12z
+2026-04-25 05:45:11,551 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbstx.t12z
+2026-04-25 05:45:12,191 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 06:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 05:45:12,494 INFO signal_engine.event_triggers: Fetching full HGEFS members for KNYC date=20260425 cycle=00
+2026-04-25 05:47:03,867 WARNING signal_engine.event_triggers: HGEFS KNYC 00 incomplete: physics=0 ai=0
+2026-04-25 05:47:13,244 WARNING signal_engine.event_triggers: No real HGEFS/GEFS+AIGEFS member data available for KNYC; Gate 1 will fail
+2026-04-25 05:47:25,034 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 05:47:25,099 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 05:47:25,162 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 05:47:25,221 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbptx.t12z
+2026-04-25 05:47:25,278 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbetx.t12z
+2026-04-25 05:47:25,345 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/12/text/blend_nbstx.t12z
+2026-04-25 05:47:25,404 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/06/text/blend_nbptx.t06z
+2026-04-25 05:47:25,465 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/06/text/blend_nbetx.t06z
+2026-04-25 05:47:25,528 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/06/text/blend_nbstx.t06z
+2026-04-25 05:47:25,593 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/00/text/blend_nbptx.t00z
+2026-04-25 05:47:25,656 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/00/text/blend_nbetx.t00z
+2026-04-25 05:47:25,710 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/00/text/blend_nbstx.t00z
+2026-04-25 06:27:38,702 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: no close frame received or sent. Reconnecting in 1s
+2026-04-25 11:46:02,689 INFO signal_engine.event_triggers: 
+KALSHI WEATHER PIPELINE - DAILY REPORT
+Date: 2026-04-25
+
+BANKROLL
+  Net P&L today (maker): $0.00
+
+TODAY'S ACTIVITY
+  Signals generated: 0
+  Trades simulated:  0
+  Trades exited:     0
+  Wins / Losses:     0 / 0
+
+GATE FAILURES TODAY
+  Gate 1 (HGEFS spread): 12
+  Gate 2 (gap < 20pp): 47
+  Gate 3 (price band): 33
+  Gate 4 (dead zone): 0
+  Gate 5 (METAR): 48
+  Gate 6 (reversal): 0
+
+DATA HEALTH
+  DSM events detected: 132
+  CLI events detected: 10
+2026-04-25 11:46:12,852 WARNING signal_engine.event_triggers: No real HGEFS/GEFS+AIGEFS member data available for KNYC; Gate 1 will fail
+2026-04-25 11:46:24,375 WARNING signal_engine.event_triggers: No real HGEFS/GEFS+AIGEFS member data available for KPHL; Gate 1 will fail
+2026-04-25 11:46:55,827 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: sent 1011 (internal error) keepalive ping timeout; no close frame received. Reconnecting in 1s
+Database created/verified at data/pipeline.db
+2026-04-25 12:02:26,573 INFO main: Starting paper trading pipeline with $500.00 bankroll
+2026-04-25 12:02:26,578 INFO main: Active tickers: ['KXHIGHNY-26APR26-T58', 'KXHIGHNY-26APR26-T51', 'KXHIGHNY-26APR26-B57.5', 'KXHIGHNY-26APR26-B55.5', 'KXHIGHNY-26APR26-B53.5', 'KXHIGHNY-26APR26-B51.5', 'KXHIGHNY-26APR25-T58', 'KXHIGHNY-26APR25-T51', 'KXHIGHNY-26APR25-B57.5', 'KXHIGHNY-26APR25-B55.5', 'KXHIGHNY-26APR25-B53.5', 'KXHIGHNY-26APR25-B51.5']
+2026-04-25 12:02:50,250 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 12:02:50,275 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 12:02:50,291 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 12:02:51,541 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 12:02:51,692 INFO signal_engine.event_triggers: Fetching GEFS physics members for KNYC date=20260425 cycle=12
+2026-04-25 12:02:53,846 INFO signal_engine.event_triggers: 
+KALSHI WEATHER PIPELINE - DAILY REPORT
+Date: 2026-04-25
+
+BANKROLL
+  Net P&L today (maker): $0.00
+
+TODAY'S ACTIVITY
+  Signals generated: 0
+  Trades simulated:  0
+  Trades exited:     0
+  Wins / Losses:     0 / 0
+
+GATE FAILURES TODAY
+  Gate 1 (HGEFS spread): 24
+  Gate 2 (gap < 20pp): 56
+  Gate 3 (price band): 43
+  Gate 4 (dead zone): 0
+  Gate 5 (METAR): 49
+  Gate 6 (reversal): 0
+
+GATE 1 AI SOURCE
+  aigefs_real: 0 checks
+  wethr_proxy: 0 checks
+
+DATA HEALTH
+  DSM events detected: 164
+  CLI events detected: 12
+2026-04-25 12:03:04,295 WARNING signal_engine.event_triggers: No real GEFS physics data available for KNYC; Gate 1 will fail
+2026-04-25 12:03:15,822 WARNING signal_engine.event_triggers: No real GEFS physics data available for KPHL; Gate 1 will fail
+2026-04-25 12:03:17,000 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: timed out during opening handshake. Reconnecting in 1s
+2026-04-25 12:04:47,587 INFO signal_engine.event_triggers: Stored GEFS physics KNYC 12: mean=56.0°F spread=3.49°F (31 members); AIGEFS=mean=53.1°F (31 members)
+2026-04-25 12:05:08,556 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 12:05:08,573 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 12:05:08,590 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 12:05:09,147 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 12:05:09,277 INFO signal_engine.event_triggers: Fetching GEFS physics members for KPHL date=20260425 cycle=12
+2026-04-25 12:05:55,479 INFO signal_engine.event_triggers: Stored GEFS physics KPHL 12: mean=58.1°F spread=2.94°F (31 members); AIGEFS=unavailable
+2026-04-25 12:06:04,822 INFO signal_engine.event_triggers: AIGEFS unavailable for KPHL; using wethr consensus 55.6°F (spread 2.43°F) as AI proxy
+2026-04-25 12:36:15,750 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 12:36:15,774 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 12:36:15,793 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 12:36:17,566 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 12:36:26,992 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 12:36:27,010 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 12:36:27,027 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 12:36:27,556 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 13:06:37,397 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 13:06:37,418 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 13:06:37,436 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 13:06:38,109 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 13:06:47,685 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 13:06:47,704 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 13:06:47,722 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 13:06:48,511 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 13:36:58,201 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 13:36:58,221 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 13:36:58,238 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 13:36:58,924 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 13:37:08,482 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 13:37:08,498 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 13:37:08,514 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 13:37:09,292 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 14:07:19,989 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 14:07:20,403 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 14:07:20,774 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 14:07:21,454 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 14:07:31,748 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbptx.t18z
+2026-04-25 14:07:31,955 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 14:07:32,324 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 403 Client Error: Forbidden for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 14:07:32,843 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 14:37:43,714 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 404 Client Error: Not Found for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 14:37:44,108 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 404 Client Error: Not Found for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 14:37:44,670 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 14:37:54,161 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 404 Client Error: Not Found for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbetx.t18z
+2026-04-25 14:37:54,190 WARNING data_ingest.model_fetcher: NBM bulletin unavailable: 404 Client Error: Not Found for url: https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20260425/18/text/blend_nbstx.t18z
+2026-04-25 14:37:54,704 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 12:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 15:08:05,827 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 15:08:15,816 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 15:38:26,008 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 15:38:36,161 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior

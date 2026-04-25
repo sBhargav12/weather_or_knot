@@ -280,7 +280,7 @@ class EventTriggerEngine:
                 history,
                 bracket["ticker"],
             )
-            self.db.insert_gate_check(self._gate_record(city, bracket, target_date, trigger_reason, gate))
+            self.db.insert_gate_check(self._gate_record(city, bracket, target_date, trigger_reason, gate, hgefs_like))
             if gate["all_pass"] and self._liquid(bracket):
                 signal_id = self.db.insert_signal(
                     {
@@ -327,12 +327,36 @@ class EventTriggerEngine:
         latest = self.db.get_model_run_latest(city, "HGEFS")
         if latest and latest.get("physics_mean") is not None:
             raw = json.loads(latest.get("raw_data_json") or "{}")
-            latest = dict(latest)
-            latest["fallback"] = False
-            latest["member_counts"] = raw.get("member_counts", {})
-            return latest
+            result = dict(latest)
+            result["fallback"] = False
+            result["member_counts"] = raw.get("member_counts", {})
+
+            result["gate1_ai_source"] = "aigefs_real" if result.get("ai_mean") is not None else None
+
+            # AIGEFS is currently blocked (NOMADS 403 for all file downloads).
+            # When physics data is real but ai_mean is absent, use the multi-model
+            # wethr consensus as the AI proxy so Gate 1 still runs a cross-check.
+            # ai_spread is the actual std-dev of the wethr models, not a constant.
+            if result.get("ai_mean") is None and models:
+                target_date = datetime.now(ZoneInfo(config.CITIES[city]["timezone"])).date().isoformat()
+                wethr_consensus = self.gumbel.compute_consensus_from_wethr(models, target_date)
+                if wethr_consensus is not None:
+                    wethr_values = [float(v) for v in models.values() if v is not None]
+                    import numpy as _np
+                    ai_spread = float(_np.std(wethr_values)) if len(wethr_values) >= 2 else 1.5
+                    result["ai_mean"] = wethr_consensus
+                    result["ai_spread"] = ai_spread
+                    result["ai_proxy"] = "wethr_consensus"
+                    result["gate1_ai_source"] = "wethr_proxy"
+                    logger.info(
+                        "AIGEFS unavailable for %s; using wethr consensus %.1f°F (spread %.2f°F) as AI proxy",
+                        city, wethr_consensus, ai_spread,
+                    )
+            return result
+
+        # No physics data at all — try multi-model fallback
         if config.REQUIRE_HGEFS_FOR_SIGNALS:
-            logger.warning("No real HGEFS/GEFS+AIGEFS member data available for %s; Gate 1 will fail", city)
+            logger.warning("No real GEFS physics data available for %s; Gate 1 will fail", city)
             return {"physics_mean": None, "ai_mean": None, "physics_spread": None, "ai_spread": None}
         values = [float(v) for v in models.values() if v is not None]
         if len(values) >= config.FALLBACK_MIN_AGREEMENT:
@@ -452,37 +476,45 @@ class EventTriggerEngine:
                 return
 
     def _fetch_and_store_hgefs(self, city: str, cfg: dict, target_date: str, date_str: str, cycle: str) -> None:
-        logger.info("Fetching full HGEFS members for %s date=%s cycle=%s", city, date_str, cycle)
+        logger.info("Fetching GEFS physics members for %s date=%s cycle=%s", city, date_str, cycle)
         result = self.model_fetcher.fetch_all_hgefs_members(date_str, cycle, cfg)
         physics_count = len(result.get("physics_members", {}))
         ai_count = len(result.get("ai_members", {}))
-        complete_enough = (
+
+        # Physics threshold: need enough members for a meaningful ensemble mean.
+        # AI (AIGEFS) may be absent if NOMADS blocks downloads; that is handled
+        # later in _hgefs_or_fallback by substituting the wethr consensus.
+        physics_ok = (
             physics_count >= config.HGEFS_MIN_PHYSICS_MEMBERS
-            and ai_count >= config.HGEFS_MIN_AI_MEMBERS
             and result.get("physics_mean") is not None
-            and result.get("ai_mean") is not None
         )
+        ai_ok = ai_count >= config.HGEFS_MIN_AI_MEMBERS and result.get("ai_mean") is not None
+
+        consensus_f = None
+        if physics_ok and ai_ok:
+            consensus_f = (result["physics_mean"] + result["ai_mean"]) / 2
+        elif physics_ok:
+            consensus_f = result["physics_mean"]
+
         self.db.insert_model_run(
             {
                 "model": "HGEFS",
                 "city": city,
                 "target_date": target_date,
                 "run_time": f"{date_str} {cycle}Z",
-                "physics_mean": result.get("physics_mean") if complete_enough else None,
-                "physics_spread": result.get("physics_spread") if complete_enough else None,
-                "ai_mean": result.get("ai_mean") if complete_enough else None,
-                "ai_spread": result.get("ai_spread") if complete_enough else None,
-                "consensus_temp_f": (
-                    (result["physics_mean"] + result["ai_mean"]) / 2
-                    if complete_enough
-                    else None
-                ),
+                # Always store physics data when available; ai_mean may be None.
+                "physics_mean": result.get("physics_mean") if physics_ok else None,
+                "physics_spread": result.get("physics_spread") if physics_ok else None,
+                "ai_mean": result.get("ai_mean") if ai_ok else None,
+                "ai_spread": result.get("ai_spread") if ai_ok else None,
+                "consensus_temp_f": consensus_f,
                 "raw_data_json": json.dumps(
                     {
                         **result,
                         "cycle": cycle,
                         "date_str": date_str,
-                        "complete_enough": complete_enough,
+                        "physics_ok": physics_ok,
+                        "ai_ok": ai_ok,
                         "member_counts": {"physics": physics_count, "ai": ai_count},
                     },
                     default=str,
@@ -490,18 +522,20 @@ class EventTriggerEngine:
                 "source": "nomads",
             }
         )
-        if complete_enough:
+        if physics_ok:
             logger.info(
-                "Stored HGEFS %s %s: physics %.2f/%d, ai %.2f/%d",
-                city,
-                cycle,
+                "Stored GEFS physics %s %s: mean=%.1f°F spread=%.2f°F (%d members); AIGEFS=%s",
+                city, cycle,
                 result["physics_mean"],
+                result.get("physics_spread", 0.0),
                 physics_count,
-                result["ai_mean"],
-                ai_count,
+                f"mean={result['ai_mean']:.1f}°F ({ai_count} members)" if ai_ok else "unavailable",
             )
         else:
-            logger.warning("HGEFS %s %s incomplete: physics=%d ai=%d", city, cycle, physics_count, ai_count)
+            logger.warning(
+                "GEFS %s %s insufficient: physics=%d (need %d), ai=%d",
+                city, cycle, physics_count, config.HGEFS_MIN_PHYSICS_MEMBERS, ai_count,
+            )
 
     @staticmethod
     def _latest_obs_record(station: str, obs: dict) -> dict:
@@ -546,7 +580,7 @@ class EventTriggerEngine:
         }
 
     @staticmethod
-    def _gate_record(city: str, bracket: dict, target_date: str, trigger_reason: str, gate: dict) -> dict:
+    def _gate_record(city: str, bracket: dict, target_date: str, trigger_reason: str, gate: dict, hgefs_like: dict = None) -> dict:
         return {
             "city": city,
             "ticker": bracket.get("ticker"),
@@ -558,6 +592,7 @@ class EventTriggerEngine:
             "gate1_spread_between": gate["gate1"].get("spread_between"),
             "gate1_physics_spread": gate["gate1"].get("physics_spread"),
             "gate1_ai_spread": gate["gate1"].get("ai_spread"),
+            "gate1_ai_source": (hgefs_like or {}).get("gate1_ai_source"),
             "gate2_pass": gate["gate2"]["pass"],
             "gate2_model_prob": gate["gate2"].get("model_prob"),
             "gate2_market_price": gate["gate2"].get("market_price"),
