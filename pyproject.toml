@@ -3,23 +3,33 @@ name = "prediction-market-data"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
+    "aiohttp>=3.9.0",
     "brokenaxes>=0.6.2",
+    "cfgrib>=0.9.15",
     "cryptography>=46.0.3",
     "duckdb>=1.4.2",
+    "eccodes>=2.44.0",
     "httpx>=0.28.1",
     "imageio>=2.36.0",
     "kalshi-python>=2.1.4",
     "matplotlib>=3.9.4",
+    "numpy>=2.0.0",
     "pandas>=2.3.3",
     "polymarket-py>=0.1.0",
     "pyarrow>=18.0.0",
+    "pytz>=2025.2",
+    "requests>=2.32.0",
+    "schedule>=1.2.2",
+    "scikit-learn>=1.5.0",
     "scipy>=1.13.1",
     "squarify>=0.4.4",
     "tenacity>=8.0.0",
     "tqdm>=4.67.1",
     "web3>=6.0.0",
+    "websockets>=15.0.1",
+    "xarray>=2025.1.0",
     "simple-term-menu>=1.6.0",
     "python-dotenv>=1.2.1",
 ]
@@ -54,4 +64,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["src"]
+known-first-party = [
+    "dashboard",
+    "data_ingest",
+    "data_store",
+    "kalshi_watcher",
+    "paper_trader",
+    "signal_engine",
+    "src",
+]
