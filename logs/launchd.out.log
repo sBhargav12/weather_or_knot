@@ -215,3 +215,64 @@ DATA HEALTH
 2026-04-25 15:08:15,816 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
 2026-04-25 15:38:26,008 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
 2026-04-25 15:38:36,161 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:08:51,144 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:09:01,342 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:09:01,458 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: sent 1011 (internal error) keepalive ping timeout; no close frame received. Reconnecting in 1s
+2026-04-25 16:39:11,649 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:39:22,083 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:09:35,475 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:09:46,306 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+Database created/verified at data/pipeline.db
+2026-04-25 17:33:45,664 INFO main: Starting paper trading pipeline with $500.00 bankroll
+2026-04-25 17:33:45,668 INFO main: Active tickers: ['KXHIGHNY-26APR26-T58', 'KXHIGHNY-26APR26-T51', 'KXHIGHNY-26APR26-B57.5', 'KXHIGHNY-26APR26-B55.5', 'KXHIGHNY-26APR26-B53.5', 'KXHIGHNY-26APR26-B51.5', 'KXHIGHNY-26APR25-T58', 'KXHIGHNY-26APR25-T51', 'KXHIGHNY-26APR25-B57.5', 'KXHIGHNY-26APR25-B55.5', 'KXHIGHNY-26APR25-B53.5', 'KXHIGHNY-26APR25-B51.5']
+2026-04-25 17:34:09,886 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:34:10,022 INFO signal_engine.event_triggers: Fetching GEFS physics members for KNYC date=20260425 cycle=12
+2026-04-25 17:34:13,105 INFO signal_engine.event_triggers: 
+KALSHI WEATHER PIPELINE - DAILY REPORT
+Date: 2026-04-25
+
+BANKROLL
+  Net P&L today (maker): $0.00
+
+TODAY'S ACTIVITY
+  Signals generated: 4
+  Trades simulated:  3
+  Trades exited:     0
+  Wins / Losses:     0 / 0
+
+SIGNAL BREAKDOWN BY SLEEVE
+  CORE_HGEFS_GUMBEL: 0 signals, 0 trades (avg conf: 0)
+  TAIL_NO: 1 signals, 0 trades (avg conf: 35)
+  DEEP_TAIL_NO: 3 signals, 0 trades (avg conf: 50)
+  LADDER: 0 signals, 0 trades (avg conf: 0)
+
+GATE PASS RATES TODAY
+  Gate 1 (model convergence): 36/96 (37%)
+  Gate 2 (gap threshold):     16/96 (16%)
+  Gate 3 (price band):        22/96 (22%)
+  Gate 4 (dead zone mod):     modifier only
+  Gate 5 (METAR):             modifier only
+  Gate 6 (reversal):          modifier only
+  Combined Tier 1:            0/96 → ~0 signals/day
+
+GATE 1 AI SOURCE
+  aigefs_real:  24 checks
+  wethr_proxy:  0 checks
+
+MODEL AVAILABILITY TODAY
+  HGEFS real physics data: YES
+  AIGEFS real AI data:     YES
+  Physics mean: 56.0°F ± 3.49°F
+  AIGEFS mean (corrected): 53.1°F (raw: 49.1°F)
+  Wethr models today: HRRR, NBM
+
+CANDIDATE SIGNALS TODAY
+  Evaluated (core sleeve): 12
+  Passed Tier 1:           0
+  TAIL_NO candidates:      0
+  DEEP_TAIL_NO candidates: 0
+
+DATA HEALTH
+  DSM events detected: 768
+  CLI events detected: 14
+2026-04-25 17:34:13,106 INFO signal_engine.event_triggers: Peak model run window (12:40 PM ET) — triggering gate checks

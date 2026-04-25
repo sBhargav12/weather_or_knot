@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from data_store.db import Database
 
@@ -8,6 +9,7 @@ from data_store.db import Database
 def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
     report_date = report_date or date.today().isoformat()
     db = Database(db_path)
+
     signals = db.execute("SELECT * FROM signals WHERE date(created_at) = date(?)", (report_date,))
     trades = db.execute("SELECT * FROM paper_trades WHERE date(created_at) = date(?)", (report_date,))
     settled = [row for row in trades if row["exit_time"] is not None]
@@ -30,7 +32,11 @@ def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
         f"  Trades exited:     {len(settled)}",
         f"  Wins / Losses:     {wins} / {losses}",
         "",
+        print_sleeve_summary(db_path, report_date),
+        "",
         print_gate_summary(db_path, report_date),
+        "",
+        print_model_availability(db_path, report_date),
         "",
         "DATA HEALTH",
         f"  DSM events detected: {len(dsm_rows)}",
@@ -39,24 +45,107 @@ def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def print_sleeve_summary(db_path: str, report_date: str | None = None) -> str:
+    report_date = report_date or date.today().isoformat()
+    db = Database(db_path)
+
+    lines = ["SIGNAL BREAKDOWN BY SLEEVE"]
+    for sleeve in ["CORE_HGEFS_GUMBEL", "TAIL_NO", "DEEP_TAIL_NO", "LADDER"]:
+        sigs = db.execute(
+            "SELECT * FROM signals WHERE strategy_sleeve = ? AND date(created_at) = date(?)",
+            (sleeve, report_date),
+        )
+        trades = db.execute(
+            "SELECT * FROM paper_trades WHERE strategy_sleeve = ? AND date(created_at) = date(?)",
+            (sleeve, report_date),
+        )
+        avg_conf = (
+            sum(float(s["confidence_score"] or 0) for s in sigs) / len(sigs)
+            if sigs else 0.0
+        )
+        lines.append(f"  {sleeve}: {len(sigs)} signals, {len(trades)} trades (avg conf: {avg_conf:.0f})")
+    return "\n".join(lines)
+
+
 def print_gate_summary(db_path: str, report_date: str | None = None) -> str:
     report_date = report_date or date.today().isoformat()
     db = Database(db_path)
     rows = db.execute("SELECT * FROM gate_checks WHERE date(created_at) = date(?)", (report_date,))
-    summary = {
-        "Gate 1 (HGEFS spread)": sum(1 for row in rows if row["gate1_pass"] == 0),
-        "Gate 2 (gap < 20pp)": sum(1 for row in rows if row["gate2_pass"] == 0),
-        "Gate 3 (price band)": sum(1 for row in rows if row["gate3_pass"] == 0),
-        "Gate 4 (dead zone)": sum(1 for row in rows if row["gate4_pass"] == 0),
-        "Gate 5 (METAR)": sum(1 for row in rows if row["gate5_pass"] == 0),
-        "Gate 6 (reversal)": sum(1 for row in rows if row["gate6_pass"] == 0),
-    }
-    real_aigefs = sum(1 for row in rows if row["gate1_ai_source"] == "aigefs_real")
-    wethr_proxy = sum(1 for row in rows if row["gate1_ai_source"] == "wethr_proxy")
-    lines = ["GATE FAILURES TODAY"]
-    lines.extend(f"  {label}: {count}" for label, count in summary.items())
+
+    total = len(rows)
+    if total == 0:
+        return "GATE PASS RATES TODAY\n  No gate checks recorded."
+
+    def pct(col: str) -> str:
+        n = sum(1 for r in rows if r[col] == 1)
+        return f"{n}/{total} ({100*n//total}%)"
+
+    tier1_pass = sum(1 for r in rows if r["all_pass"] == 1)
+    signals_per_day = tier1_pass  # each all_pass generates a signal
+
+    real_aigefs = sum(1 for r in rows if r["gate1_ai_source"] == "aigefs_real")
+    wethr_proxy = sum(1 for r in rows if r["gate1_ai_source"] == "wethr_proxy")
+
+    lines = [
+        "GATE PASS RATES TODAY",
+        f"  Gate 1 (model convergence): {pct('gate1_pass')}",
+        f"  Gate 2 (gap threshold):     {pct('gate2_pass')}",
+        f"  Gate 3 (price band):        {pct('gate3_pass')}",
+        f"  Gate 4 (dead zone mod):     modifier only",
+        f"  Gate 5 (METAR):             modifier only",
+        f"  Gate 6 (reversal):          modifier only",
+        f"  Combined Tier 1:            {tier1_pass}/{total} → ~{signals_per_day} signals/day",
+        "",
+        "GATE 1 AI SOURCE",
+        f"  aigefs_real:  {real_aigefs} checks",
+        f"  wethr_proxy:  {wethr_proxy} checks",
+    ]
+    return "\n".join(lines)
+
+
+def print_model_availability(db_path: str, report_date: str | None = None) -> str:
+    report_date = report_date or date.today().isoformat()
+    db = Database(db_path)
+
+    hgefs = db.execute(
+        "SELECT * FROM model_runs WHERE model = 'HGEFS' AND date(created_at) = date(?) ORDER BY created_at DESC LIMIT 1",
+        (report_date,),
+    )
+
+    lines = ["MODEL AVAILABILITY TODAY"]
+    if hgefs:
+        row = hgefs[0]
+        real = row["physics_mean"] is not None
+        ai_real = row["ai_mean"] is not None and row["aigefs_temp_raw"] is not None
+        lines.append(f"  HGEFS real physics data: {'YES' if real else 'NO'}")
+        lines.append(f"  AIGEFS real AI data:     {'YES' if ai_real else 'NO (wethr proxy)'}")
+        if real:
+            lines.append(f"  Physics mean: {row['physics_mean']:.1f}°F ± {row['physics_spread']:.2f}°F")
+        if ai_real:
+            lines.append(f"  AIGEFS mean (corrected): {row['ai_mean']:.1f}°F (raw: {row['aigefs_temp_raw']:.1f}°F)")
+    else:
+        lines.append("  HGEFS real physics data: NO")
+        lines.append("  AIGEFS real AI data:     NO")
+
+    # List models that returned data today
+    wethr_models = db.execute(
+        "SELECT DISTINCT model FROM model_runs WHERE model NOT IN ('HGEFS','NBM_BULLETIN','WETHR_CONSENSUS') AND date(created_at) = date(?)",
+        (report_date,),
+    )
+    model_list = [r["model"] for r in wethr_models]
+    lines.append(f"  Wethr models today: {', '.join(model_list) if model_list else 'none'}")
+
+    # Candidate signals summary
+    candidates = db.execute(
+        "SELECT * FROM candidate_signals WHERE date(created_at) = date(?)", (report_date,)
+    )
+    core_candidates = [c for c in candidates if c["strategy_sleeve"] == "CORE_HGEFS_GUMBEL"]
+    passed = sum(1 for c in core_candidates if c["would_pass_core"] == 1)
     lines.append("")
-    lines.append("GATE 1 AI SOURCE")
-    lines.append(f"  aigefs_real: {real_aigefs} checks")
-    lines.append(f"  wethr_proxy: {wethr_proxy} checks")
+    lines.append("CANDIDATE SIGNALS TODAY")
+    lines.append(f"  Evaluated (core sleeve): {len(core_candidates)}")
+    lines.append(f"  Passed Tier 1:           {passed}")
+    lines.append(f"  TAIL_NO candidates:      {sum(1 for c in candidates if c['strategy_sleeve'] == 'TAIL_NO')}")
+    lines.append(f"  DEEP_TAIL_NO candidates: {sum(1 for c in candidates if c['strategy_sleeve'] == 'DEEP_TAIL_NO')}")
+
     return "\n".join(lines)

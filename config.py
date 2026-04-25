@@ -126,6 +126,18 @@ POLL_INTERVAL_5MIN = 300
 POLL_INTERVAL_30MIN = 1800
 POLL_INTERVAL_DAILY = 86400
 
+MODEL_RUN_SCHEDULE_ET = {
+    "GFS":  ["00:40", "06:40", "12:40", "18:40"],
+    "ECMWF": ["03:00", "15:00"],
+    "HRRR": "hourly",
+    "NAM":  ["04:35", "10:35", "16:35", "22:35"],
+    "NBM":  "hourly",
+    "UKMO": ["05:00", "17:00"],
+}
+
+# 12Z GFS run (~12:40 PM ET) is the most important trigger for afternoon trading.
+PEAK_MODEL_RUN_ET = "12:40"
+
 TEMP_ANOMALY_TRIGGER = 1.5
 PRICE_MOVE_TRIGGER = Decimal("0.05")
 NWS_VERSION_CHECK = True

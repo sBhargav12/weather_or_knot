@@ -72,6 +72,9 @@ class EventTriggerEngine:
         return [(city, cfg) for city, cfg in config.CITIES.items() if cfg.get("active")]
 
     async def poll_60s(self) -> None:
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        dsm_detected = self._is_dsm_window(now_et)
+
         for city, cfg in self._active_cities():
             station = cfg["wethr_station"]
             try:
@@ -84,6 +87,14 @@ class EventTriggerEngine:
                     self.db.insert_dsm_report(self._dsm_record(city, station, dsm))
             except Exception as exc:
                 logger.warning("60s poll failed for %s: %s", city, exc)
+
+        # Check exits on all open paper trades using latest DB prices (no new API calls)
+        try:
+            current_prices = self._get_current_prices()
+            self.paper_trader.check_exits(current_prices, dsm_detected=dsm_detected)
+            self._enforce_time_exits(now_et)
+        except Exception as exc:
+            logger.warning("Exit check failed: %s", exc)
 
     async def poll_5min(self) -> None:
         target_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
@@ -223,6 +234,18 @@ class EventTriggerEngine:
                         self.daily_completed.add(key)
                     except Exception as exc:
                         logger.warning("daily job %s failed: %s", name, exc)
+
+            # 12:40 PM ET — 12Z GFS peak model run trigger (most important of the day)
+            peak_key = (now.date().isoformat(), "peak_model_run_12z")
+            if peak_key not in self.daily_completed and now.time() >= self._parse_et_time(config.PEAK_MODEL_RUN_ET):
+                self.daily_completed.add(peak_key)
+                logger.info("Peak model run window (12:40 PM ET) — triggering gate checks")
+                for city, _ in self._active_cities():
+                    try:
+                        await self.fire_gate_check(city, "peak_model_run_12z")
+                    except Exception as exc:
+                        logger.warning("peak_model_run gate check failed for %s: %s", city, exc)
+
             await asyncio.sleep(60)
 
     async def fire_gate_check(self, city: str, trigger_reason: str) -> None:
@@ -279,9 +302,20 @@ class EventTriggerEngine:
                 "YES",
                 history,
                 bracket["ticker"],
+                wethr_models=models,
             )
             self.db.insert_gate_check(self._gate_record(city, bracket, target_date, trigger_reason, gate, hgefs_like))
+
+            # Log every evaluation to candidate_signals (research DB)
+            self._log_candidate(city, bracket, target_date, gate, prob, market_price, hgefs_like)
+
+            # SLEEVE: CORE_HGEFS_GUMBEL — all Tier 1 gates pass
             if gate["all_pass"] and self._liquid(bracket):
+                using_proxy = hgefs_like.get("gate1_ai_source") == "wethr_proxy"
+                confidence = gate["confidence_score"]
+                if using_proxy:
+                    confidence = max(0.0, confidence - 20.0)
+                entry_price = market_price if gate["direction"] == "YES" else self._no_entry_price(bracket)
                 signal_id = self.db.insert_signal(
                     {
                         "city": city,
@@ -291,24 +325,181 @@ class EventTriggerEngine:
                         "bracket_lo": bracket.get("strike_lo"),
                         "bracket_hi": bracket.get("strike_hi"),
                         "direction": gate["direction"],
-                        "entry_price": market_price if gate["direction"] == "YES" else 1.0 - market_price,
+                        "entry_price": entry_price,
                         "target_price": float(config.TARGET_EXIT_PRICE),
-                        "stop_price": max(0.0, (market_price if gate["direction"] == "YES" else 1.0 - market_price) - float(config.STOP_LOSS_DIFF)),
+                        "stop_price": max(0.0, entry_price - float(config.STOP_LOSS_DIFF)),
                         "model_prob": prob,
                         "market_price": market_price,
                         "gap_pp": gate["gap_pp"],
-                        "confidence_score": gate["confidence_score"],
+                        "confidence_score": confidence,
                         "physics_mean": hgefs_like.get("physics_mean"),
                         "ai_mean": hgefs_like.get("ai_mean"),
                         "nbm_p50": nbm.get("p50"),
                         "metar_temp_f": metar,
                         "trigger_reason": trigger_reason,
-                        "reasoning": f"All 6 gates passed; gap={gate['gap_pp']:.1f}pp",
+                        "hgefs_proxy": int(using_proxy),
+                        "strategy_sleeve": "CORE_HGEFS_GUMBEL",
+                        "reasoning": f"All gates passed; gap={gate['gap_pp']:.1f}pp; proxy={using_proxy}",
                     }
                 )
                 signal = dict(self.db.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))[0])
                 signal["spread"] = bracket.get("spread") or "0"
                 self.paper_trader.on_signal(signal)
+
+            # SLEEVE: TAIL_NO — model says bracket unlikely but market still priced in
+            self._check_tail_no_sleeve(city, bracket, target_date, prob, market_price)
+
+            # SLEEVE: DEEP_TAIL_NO — model says near-zero probability
+            self._check_deep_tail_no_sleeve(city, bracket, target_date, prob, market_price)
+
+    def _get_current_prices(self) -> dict:
+        """Return {ticker: last_yes_price} from kalshi_prices without API calls."""
+        rows = self.db.execute(
+            """
+            SELECT ticker, yes_last, yes_ask, yes_bid
+            FROM kalshi_prices
+            WHERE id IN (SELECT MAX(id) FROM kalshi_prices GROUP BY ticker)
+            """
+        )
+        prices = {}
+        for row in rows:
+            for col in ("yes_last", "yes_ask", "yes_bid"):
+                val = row[col]
+                if val is not None:
+                    try:
+                        prices[row["ticker"]] = float(val)
+                        break
+                    except (ValueError, TypeError):
+                        continue
+        return prices
+
+    def _is_dsm_window(self, now_et: datetime) -> bool:
+        """True if current time is in the 4:15–4:30 PM ET DSM cancel window."""
+        t = now_et.time()
+        from datetime import time as dt_time
+        return dt_time(16, 15) <= t <= dt_time(16, 30)
+
+    def _enforce_time_exits(self, now_et: datetime) -> None:
+        """Force-close all open trades at 11 PM ET."""
+        from datetime import time as dt_time
+        if now_et.time() < dt_time(23, 0):
+            return
+        open_trades = self.db.get_open_trades()
+        if not open_trades:
+            return
+        current_prices = self._get_current_prices()
+        for trade in open_trades:
+            price = current_prices.get(trade["ticker"], float(trade.get("entry_price", 0)))
+            self.paper_trader._exit_trade(trade["id"], price, "TIME_LIMIT")
+            logger.info("TIME_LIMIT exit for %s at %.2f", trade["ticker"], price)
+
+    def _log_candidate(self, city: str, bracket: dict, target_date: str, gate: dict, prob: float, market_price: float, hgefs_like: dict) -> None:
+        """Record every gate evaluation to candidate_signals for research."""
+        from datetime import UTC as _UTC
+        self.db.insert_candidate_signal({
+            "created_at": datetime.now(_UTC).isoformat(),
+            "city": city,
+            "ticker": bracket.get("ticker"),
+            "target_date": target_date,
+            "bracket": bracket.get("bracket_label"),
+            "strategy_sleeve": "CORE_HGEFS_GUMBEL",
+            "direction": gate.get("direction"),
+            "yes_price": market_price,
+            "model_prob": prob,
+            "gap_pp": gate.get("gap_pp"),
+            "confidence_score": gate.get("confidence_score"),
+            "hgefs_real": int(gate.get("gate1", {}).get("hgefs_real", False)),
+            "ai_source": hgefs_like.get("gate1_ai_source"),
+            "physics_mean": hgefs_like.get("physics_mean"),
+            "ai_mean": hgefs_like.get("ai_mean"),
+            "gate1_pass": int(gate["gate1"]["pass"]),
+            "gate2_pass": int(gate["gate2"]["pass"]),
+            "gate3_pass": int(gate["gate3"]["pass"]),
+            "gate4_pass": int(gate["gate4"]["pass"]),
+            "gate5_pass": int(gate["gate5"]["pass"]),
+            "gate6_pass": int(gate["gate6"]["pass"]),
+            "would_pass_core": int(gate["all_pass"]),
+        })
+
+    def _check_tail_no_sleeve(self, city: str, bracket: dict, target_date: str, prob: float, market_price: float) -> None:
+        """TAIL_NO: model_prob < 0.40 but market still pricing YES > 0.45."""
+        if prob >= 0.40 or market_price <= 0.45:
+            return
+        no_entry = self._no_entry_price(bracket)
+        if no_entry <= 0 or no_entry >= 1:
+            return
+        self.db.insert_candidate_signal({
+            "city": city,
+            "ticker": bracket.get("ticker"),
+            "target_date": target_date,
+            "bracket": bracket.get("bracket_label"),
+            "strategy_sleeve": "TAIL_NO",
+            "direction": "NO",
+            "yes_price": market_price,
+            "model_prob": prob,
+            "gap_pp": (prob - market_price) * 100,
+            "confidence_score": 35.0,
+            "would_pass_core": 0,
+            "notes": f"TAIL_NO: model={prob:.3f} market={market_price:.2f} no_entry={no_entry:.2f}",
+        })
+        # Create paper trade at fixed $2 stake if confidence > 30
+        signal = {
+            "id": None, "city": city, "ticker": bracket.get("ticker"),
+            "target_date": target_date, "bracket": bracket.get("bracket_label"),
+            "direction": "NO", "entry_price": no_entry,
+            "market_price": market_price, "model_prob": prob,
+            "confidence_score": 35.0, "spread": str(bracket.get("spread") or "0"),
+            "strategy_sleeve": "TAIL_NO",
+        }
+        signal_id = self.db.insert_signal({
+            "city": city, "ticker": bracket.get("ticker"), "target_date": target_date,
+            "bracket": bracket.get("bracket_label"), "direction": "NO",
+            "entry_price": no_entry, "market_price": market_price,
+            "model_prob": prob, "gap_pp": (prob - market_price) * 100,
+            "confidence_score": 35.0, "strategy_sleeve": "TAIL_NO",
+            "reasoning": f"TAIL_NO: model={prob:.3f}<0.40 market={market_price:.2f}>0.45",
+        })
+        signal["id"] = signal_id
+        self.paper_trader.on_signal(signal)
+
+    def _check_deep_tail_no_sleeve(self, city: str, bracket: dict, target_date: str, prob: float, market_price: float) -> None:
+        """DEEP_TAIL_NO: model says < 2% probability but market still > 5¢."""
+        if prob >= 0.02 or market_price <= 0.05:
+            return
+        no_entry = self._no_entry_price(bracket)
+        if no_entry <= 0 or no_entry >= 1:
+            return
+        self.db.insert_candidate_signal({
+            "city": city,
+            "ticker": bracket.get("ticker"),
+            "target_date": target_date,
+            "bracket": bracket.get("bracket_label"),
+            "strategy_sleeve": "DEEP_TAIL_NO",
+            "direction": "NO",
+            "yes_price": market_price,
+            "model_prob": prob,
+            "gap_pp": (prob - market_price) * 100,
+            "confidence_score": 50.0,
+            "would_pass_core": 0,
+            "notes": f"DEEP_TAIL_NO: model={prob:.4f}<0.02 market={market_price:.2f}>0.05",
+        })
+        signal_id = self.db.insert_signal({
+            "city": city, "ticker": bracket.get("ticker"), "target_date": target_date,
+            "bracket": bracket.get("bracket_label"), "direction": "NO",
+            "entry_price": no_entry, "market_price": market_price,
+            "model_prob": prob, "gap_pp": (prob - market_price) * 100,
+            "confidence_score": 50.0, "strategy_sleeve": "DEEP_TAIL_NO",
+            "reasoning": f"DEEP_TAIL_NO: model={prob:.4f} near-zero probability",
+        })
+        signal = {
+            "id": signal_id, "city": city, "ticker": bracket.get("ticker"),
+            "target_date": target_date, "bracket": bracket.get("bracket_label"),
+            "direction": "NO", "entry_price": no_entry,
+            "market_price": market_price, "model_prob": prob,
+            "confidence_score": 50.0, "spread": str(bracket.get("spread") or "0"),
+            "strategy_sleeve": "DEEP_TAIL_NO",
+        }
+        self.paper_trader.on_signal(signal)
 
     async def _fallback_loop(self) -> None:
         while True:
@@ -427,6 +618,18 @@ class EventTriggerEngine:
         return None
 
     @staticmethod
+    def _no_entry_price(bracket: dict) -> float:
+        """Executable NO ask = 1 - yes_bid (not 1 - yes_ask).
+        YES bid at X means someone buys YES at X, so the NO ask is 1 - X.
+        """
+        yes_bid = bracket.get("yes_bid")
+        if yes_bid is not None:
+            return round(1.0 - float(yes_bid), 4)
+        # Fallback if bid not available
+        yes_ask = bracket.get("yes_ask") or bracket.get("yes_last")
+        return round(1.0 - float(yes_ask), 4) if yes_ask is not None else 0.5
+
+    @staticmethod
     def _bracket_center(bracket: dict) -> float:
         lo = bracket.get("strike_lo")
         hi = bracket.get("strike_hi")
@@ -507,6 +710,8 @@ class EventTriggerEngine:
                 "physics_spread": result.get("physics_spread") if physics_ok else None,
                 "ai_mean": result.get("ai_mean") if ai_ok else None,
                 "ai_spread": result.get("ai_spread") if ai_ok else None,
+                "aigefs_temp_raw": result.get("aigefs_temp_raw") if ai_ok else None,
+                "aigefs_temp_corrected": result.get("aigefs_temp_corrected") if ai_ok else None,
                 "consensus_temp_f": consensus_f,
                 "raw_data_json": json.dumps(
                     {

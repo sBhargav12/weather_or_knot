@@ -74,6 +74,9 @@ class Database:
     def insert_cli_report(self, data: Dict[str, Any]) -> int:
         return self._insert("cli_reports", data)
 
+    def insert_candidate_signal(self, data: Dict[str, Any]) -> int:
+        return self._insert("candidate_signals", data)
+
     def update_daily_performance(self, date: str, data: Dict[str, Any]) -> int:
         payload = {"date": date, **data}
         return self._upsert_by_date("performance_daily", payload)

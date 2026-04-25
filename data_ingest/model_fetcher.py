@@ -168,8 +168,12 @@ class ModelFetcher:
             var_name="tmax",
         )
 
-    def extract_tmp_1000mb_at_point(self, grib_bytes: bytes, lat: float, lon_360: float) -> float:
-        """Extract TMP at 1000 hPa (AIGEFS pres), return °F + bias correction."""
+    def extract_tmp_1000mb_at_point(self, grib_bytes: bytes, lat: float, lon_360: float) -> tuple[float, float]:
+        """Extract TMP at 1000 hPa (AIGEFS pres).
+
+        Returns (raw_f, corrected_f) where corrected = raw + _AIGEFS_1000MB_BIAS_F.
+        The correction is unvalidated — caller must log a warning and store both values.
+        """
         raw_f = self._extract_grib_temp_at_point(
             grib_bytes,
             lat,
@@ -181,7 +185,12 @@ class ModelFetcher:
             },
             var_name="t",
         )
-        return raw_f + _AIGEFS_1000MB_BIAS_F
+        corrected_f = raw_f + _AIGEFS_1000MB_BIAS_F
+        logger.warning(
+            "Using unvalidated AIGEFS 1000mb proxy: raw=%.2f°F corrected=%.2f°F (bias=+%.1f°F, not yet validated)",
+            raw_f, corrected_f, _AIGEFS_1000MB_BIAS_F,
+        )
+        return raw_f, corrected_f
 
     # ------------------------------------------------------------------
     # Per-member fetchers
@@ -209,26 +218,33 @@ class ModelFetcher:
                 logger.debug("GEFS physics %s f%03d unavailable: %s", member, fhr, exc)
         return max(values) if values else None
 
-    def fetch_aigefs_member_maxt(self, date_str: str, cycle: str, member_index: int, city_config: dict) -> Optional[float]:
-        """Fetch AIGEFS AI member 1000mb TMP from NOMADS.  6-hourly steps f012-f036."""
+    def fetch_aigefs_member_maxt(self, date_str: str, cycle: str, member_index: int, city_config: dict) -> Optional[tuple[float, float]]:
+        """Fetch AIGEFS AI member 1000mb TMP from NOMADS.  6-hourly steps f012-f036.
+
+        Returns (raw_max_f, corrected_max_f) or None if unavailable.
+        corrected = raw + _AIGEFS_1000MB_BIAS_F (unvalidated proxy for surface TMAX).
+        """
         fhrs = [12, 18, 24, 30, 36]
         idx_patterns = [":TMP:", ":1000 mb:"]
-        values = []
+        raw_values: list[float] = []
+        corrected_values: list[float] = []
         for fhr in fhrs:
             try:
                 url = self.get_aigefs_file_url(date_str, cycle, member_index, fhr)
                 grib_bytes = self.get_byte_range(url, idx_patterns)
                 if grib_bytes:
-                    values.append(
-                        self.extract_tmp_1000mb_at_point(
-                            grib_bytes,
-                            float(city_config["lat"]),
-                            float(city_config["lon_360"]),
-                        )
+                    raw_f, corrected_f = self.extract_tmp_1000mb_at_point(
+                        grib_bytes,
+                        float(city_config["lat"]),
+                        float(city_config["lon_360"]),
                     )
+                    raw_values.append(raw_f)
+                    corrected_values.append(corrected_f)
             except Exception as exc:
                 logger.debug("AIGEFS mem%03d f%03d unavailable: %s", member_index, fhr, exc)
-        return max(values) if values else None
+        if not corrected_values:
+            return None
+        return max(raw_values), max(corrected_values)
 
     # ------------------------------------------------------------------
     # Full ensemble fetch
@@ -246,23 +262,29 @@ class ModelFetcher:
                 member_maxt[member] = value
 
         # AIGEFS: mem000-mem030 (0-indexed, 31 members)
+        # Stores corrected value in member_maxt for Gate 1; tracks raw separately.
+        ai_raw_values: list[float] = []
         for member_index in range(0, 31):
             member_name = f"ai{member_index:03d}"
-            value = self.fetch_aigefs_member_maxt(date_str, cycle, member_index, city_config)
-            if value is not None:
-                member_maxt[member_name] = value
+            result = self.fetch_aigefs_member_maxt(date_str, cycle, member_index, city_config)
+            if result is not None:
+                raw_f, corrected_f = result
+                member_maxt[member_name] = corrected_f
+                ai_raw_values.append(raw_f)
 
         physics = [member_maxt[m] for m in physics_members if m in member_maxt]
         ai_member_names = [f"ai{i:03d}" for i in range(0, 31)]
-        ai = [member_maxt[m] for m in ai_member_names if m in member_maxt]
+        ai_corrected = [member_maxt[m] for m in ai_member_names if m in member_maxt]
 
         return {
             "physics_members": {m: member_maxt[m] for m in physics_members if m in member_maxt},
             "ai_members": {m: member_maxt[m] for m in ai_member_names if m in member_maxt},
             "physics_mean": float(np.mean(physics)) if physics else None,
             "physics_spread": float(np.std(physics)) if physics else None,
-            "ai_mean": float(np.mean(ai)) if ai else None,
-            "ai_spread": float(np.std(ai)) if ai else None,
+            "ai_mean": float(np.mean(ai_corrected)) if ai_corrected else None,
+            "ai_spread": float(np.std(ai_corrected)) if ai_corrected else None,
+            "aigefs_temp_raw": float(np.mean(ai_raw_values)) if ai_raw_values else None,
+            "aigefs_temp_corrected": float(np.mean(ai_corrected)) if ai_corrected else None,
         }
 
     # ------------------------------------------------------------------

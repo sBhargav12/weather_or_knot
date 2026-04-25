@@ -212,3 +212,225 @@ DATA HEALTH
 2026-04-25 15:08:15,816 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
 2026-04-25 15:38:26,008 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
 2026-04-25 15:38:36,161 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:08:51,144 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:09:01,342 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:09:01,458 WARNING kalshi_watcher.orderbook: Kalshi WebSocket error: sent 1011 (internal error) keepalive ping timeout; no close frame received. Reconnecting in 1s
+2026-04-25 16:39:11,649 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 16:39:22,083 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:09:35,475 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:09:46,306 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:30:03,861 INFO main: Starting paper trading pipeline with $500.00 bankroll
+2026-04-25 17:30:03,863 INFO main: Active tickers: ['KXHIGHNY-26APR26-T58', 'KXHIGHNY-26APR26-T51', 'KXHIGHNY-26APR26-B57.5', 'KXHIGHNY-26APR26-B55.5', 'KXHIGHNY-26APR26-B53.5', 'KXHIGHNY-26APR26-B51.5', 'KXHIGHNY-26APR25-T58', 'KXHIGHNY-26APR25-T51', 'KXHIGHNY-26APR25-B57.5', 'KXHIGHNY-26APR25-B55.5', 'KXHIGHNY-26APR25-B53.5', 'KXHIGHNY-26APR25-B51.5']
+2026-04-25 17:30:26,936 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:30:27,089 INFO signal_engine.event_triggers: Fetching GEFS physics members for KNYC date=20260425 cycle=12
+2026-04-25 17:31:26,517 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.91°F corrected=45.91°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:26,624 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.76°F corrected=44.76°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:26,730 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.99°F corrected=44.99°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:26,855 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.19°F corrected=53.19°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,074 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.68°F corrected=52.68°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,179 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.27°F corrected=45.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,275 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.37°F corrected=44.37°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,410 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.14°F corrected=45.14°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,610 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.65°F corrected=54.65°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,741 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.80°F corrected=52.80°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:27,847 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.50°F corrected=45.50°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:28,076 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.52°F corrected=44.52°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:28,245 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.98°F corrected=44.98°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:28,496 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.71°F corrected=51.71°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:28,621 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.34°F corrected=53.34°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:28,786 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.47°F corrected=45.47°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:29,033 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.36°F corrected=44.36°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:29,267 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.93°F corrected=44.93°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:29,563 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.50°F corrected=54.50°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:29,674 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.84°F corrected=52.84°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:29,881 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.29°F corrected=46.29°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:30,139 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.84°F corrected=44.84°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:30,412 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.48°F corrected=44.48°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:30,528 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.14°F corrected=52.14°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:30,992 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=51.02°F corrected=55.02°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:31,079 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.08°F corrected=46.08°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:31,460 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.62°F corrected=45.62°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:31,810 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.63°F corrected=45.63°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:32,186 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.27°F corrected=54.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:32,323 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.16°F corrected=53.16°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:32,464 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.13°F corrected=46.13°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:32,851 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.17°F corrected=45.17°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:33,223 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.36°F corrected=45.36°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:33,571 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.56°F corrected=54.56°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:33,990 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.20°F corrected=52.20°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:34,110 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.53°F corrected=46.53°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:34,485 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.65°F corrected=44.65°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:34,638 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.67°F corrected=44.67°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:34,981 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.33°F corrected=50.33°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:35,123 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.41°F corrected=53.41°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:35,236 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.52°F corrected=45.52°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:35,557 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.33°F corrected=44.33°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:35,657 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.49°F corrected=44.49°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:35,953 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.26°F corrected=52.26°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:36,320 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.71°F corrected=53.71°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:36,714 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.63°F corrected=45.63°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:36,819 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.86°F corrected=44.86°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:36,927 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.27°F corrected=45.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:37,030 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.64°F corrected=52.64°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:37,134 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.67°F corrected=51.67°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:37,232 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.68°F corrected=46.68°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:37,600 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.83°F corrected=45.83°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:37,875 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.55°F corrected=45.55°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:38,162 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.32°F corrected=52.32°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:38,502 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.69°F corrected=51.69°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:38,621 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.24°F corrected=46.24°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:38,722 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.97°F corrected=44.97°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:38,828 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.65°F corrected=45.65°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,041 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.26°F corrected=53.26°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,139 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.29°F corrected=53.29°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,232 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.95°F corrected=45.95°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,478 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.95°F corrected=44.95°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,587 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.00°F corrected=45.00°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,759 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.58°F corrected=52.58°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:39,993 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.14°F corrected=53.14°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:40,205 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.73°F corrected=45.73°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:40,411 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.93°F corrected=44.93°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:40,516 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.72°F corrected=45.72°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:40,750 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.90°F corrected=54.90°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:40,962 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.11°F corrected=53.11°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,083 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.06°F corrected=45.06°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,280 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.21°F corrected=44.21°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,389 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.00°F corrected=45.00°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,575 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.46°F corrected=54.46°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,815 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.40°F corrected=52.40°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:41,920 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.33°F corrected=46.33°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,126 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.99°F corrected=44.99°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,351 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.39°F corrected=44.39°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,537 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.77°F corrected=53.77°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,633 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.47°F corrected=53.47°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,730 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=42.03°F corrected=46.03°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:42,918 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.32°F corrected=44.32°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,018 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.25°F corrected=44.25°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,222 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.47°F corrected=52.47°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,487 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.08°F corrected=51.08°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,600 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.58°F corrected=45.58°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,727 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.61°F corrected=43.61°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:43,928 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.75°F corrected=43.75°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,156 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=48.74°F corrected=52.74°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,260 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.60°F corrected=51.60°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,497 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.68°F corrected=45.68°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,607 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.12°F corrected=44.12°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,761 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.42°F corrected=44.42°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:44,966 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=51.22°F corrected=55.22°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,118 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.10°F corrected=54.10°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,221 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.84°F corrected=44.84°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,658 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.27°F corrected=44.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,754 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.96°F corrected=44.96°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,865 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=51.33°F corrected=55.33°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:45,964 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.08°F corrected=51.08°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:46,101 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.50°F corrected=45.50°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:46,290 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.44°F corrected=44.44°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:46,469 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.17°F corrected=44.17°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:46,897 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.99°F corrected=49.99°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:47,175 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.37°F corrected=51.37°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:47,258 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.49°F corrected=44.49°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:47,512 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.78°F corrected=43.78°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:47,607 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.97°F corrected=43.97°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:47,929 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.09°F corrected=50.09°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:48,038 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.03°F corrected=49.03°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:48,147 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.41°F corrected=44.41°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:48,497 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.45°F corrected=43.45°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:48,640 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.23°F corrected=44.23°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:49,159 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.84°F corrected=51.84°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:49,279 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.68°F corrected=49.68°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:49,615 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.20°F corrected=44.20°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:49,889 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.27°F corrected=43.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:50,376 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.36°F corrected=44.36°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:50,590 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=50.26°F corrected=54.26°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:50,698 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.90°F corrected=50.90°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:51,457 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.16°F corrected=43.16°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:51,861 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=38.44°F corrected=42.44°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:52,183 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=38.94°F corrected=42.94°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:52,278 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=44.92°F corrected=48.92°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:52,629 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.19°F corrected=49.19°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:52,868 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.69°F corrected=44.69°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:53,201 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.27°F corrected=44.27°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:53,457 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.74°F corrected=43.74°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:53,570 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=44.59°F corrected=48.59°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:53,677 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.63°F corrected=50.63°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:53,869 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=41.50°F corrected=45.50°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:54,116 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.23°F corrected=44.23°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:54,227 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.04°F corrected=44.04°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:54,315 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=43.70°F corrected=47.70°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:54,636 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.53°F corrected=49.53°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:54,840 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.87°F corrected=43.87°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,044 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.25°F corrected=43.25°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,138 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.42°F corrected=44.42°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,338 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=51.48°F corrected=55.48°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,559 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.92°F corrected=50.92°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,656 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.04°F corrected=43.04°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,841 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=38.85°F corrected=42.85°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:55,936 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.64°F corrected=43.64°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:56,138 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=49.80°F corrected=53.80°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:56,326 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.11°F corrected=51.11°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:56,917 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=40.54°F corrected=44.54°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,166 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.63°F corrected=43.63°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,293 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.47°F corrected=43.47°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,545 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.60°F corrected=51.60°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,756 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=46.64°F corrected=50.64°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,851 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.74°F corrected=43.74°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:57,953 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=38.93°F corrected=42.93°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:58,099 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=39.38°F corrected=43.38°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:58,229 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=47.38°F corrected=51.38°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:58,358 WARNING data_ingest.model_fetcher: Using unvalidated AIGEFS 1000mb proxy: raw=45.94°F corrected=49.94°F (bias=+4.0°F, not yet validated)
+2026-04-25 17:31:58,360 INFO signal_engine.event_triggers: Stored GEFS physics KNYC 12: mean=56.0°F spread=3.49°F (31 members); AIGEFS=mean=53.1°F (31 members)
+2026-04-25 17:32:18,931 WARNING signal_engine.event_triggers: NBM bulletin for KPHL 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:32:19,048 INFO signal_engine.event_triggers: Fetching GEFS physics members for KPHL date=20260425 cycle=12
+2026-04-25 17:33:45,664 INFO main: Starting paper trading pipeline with $500.00 bankroll
+2026-04-25 17:33:45,668 INFO main: Active tickers: ['KXHIGHNY-26APR26-T58', 'KXHIGHNY-26APR26-T51', 'KXHIGHNY-26APR26-B57.5', 'KXHIGHNY-26APR26-B55.5', 'KXHIGHNY-26APR26-B53.5', 'KXHIGHNY-26APR26-B51.5', 'KXHIGHNY-26APR25-T58', 'KXHIGHNY-26APR25-T51', 'KXHIGHNY-26APR25-B57.5', 'KXHIGHNY-26APR25-B55.5', 'KXHIGHNY-26APR25-B53.5', 'KXHIGHNY-26APR25-B51.5']
+2026-04-25 17:34:09,886 WARNING signal_engine.event_triggers: NBM bulletin for KNYC 2026-04-25 18:00:00 uses derived TXN/XND values; skipping full Bayesian percentile prior
+2026-04-25 17:34:10,022 INFO signal_engine.event_triggers: Fetching GEFS physics members for KNYC date=20260425 cycle=12
+2026-04-25 17:34:13,105 INFO signal_engine.event_triggers: 
+KALSHI WEATHER PIPELINE - DAILY REPORT
+Date: 2026-04-25
+
+BANKROLL
+  Net P&L today (maker): $0.00
+
+TODAY'S ACTIVITY
+  Signals generated: 4
+  Trades simulated:  3
+  Trades exited:     0
+  Wins / Losses:     0 / 0
+
+SIGNAL BREAKDOWN BY SLEEVE
+  CORE_HGEFS_GUMBEL: 0 signals, 0 trades (avg conf: 0)
+  TAIL_NO: 1 signals, 0 trades (avg conf: 35)
+  DEEP_TAIL_NO: 3 signals, 0 trades (avg conf: 50)
+  LADDER: 0 signals, 0 trades (avg conf: 0)
+
+GATE PASS RATES TODAY
+  Gate 1 (model convergence): 36/96 (37%)
+  Gate 2 (gap threshold):     16/96 (16%)
+  Gate 3 (price band):        22/96 (22%)
+  Gate 4 (dead zone mod):     modifier only
+  Gate 5 (METAR):             modifier only
+  Gate 6 (reversal):          modifier only
+  Combined Tier 1:            0/96 → ~0 signals/day
+
+GATE 1 AI SOURCE
+  aigefs_real:  24 checks
+  wethr_proxy:  0 checks
+
+MODEL AVAILABILITY TODAY
+  HGEFS real physics data: YES
+  AIGEFS real AI data:     YES
+  Physics mean: 56.0°F ± 3.49°F
+  AIGEFS mean (corrected): 53.1°F (raw: 49.1°F)
+  Wethr models today: HRRR, NBM
+
+CANDIDATE SIGNALS TODAY
+  Evaluated (core sleeve): 12
+  Passed Tier 1:           0
+  TAIL_NO candidates:      0
+  DEEP_TAIL_NO candidates: 0
+
+DATA HEALTH
+  DSM events detected: 768
+  CLI events detected: 14
+2026-04-25 17:34:13,106 INFO signal_engine.event_triggers: Peak model run window (12:40 PM ET) — triggering gate checks

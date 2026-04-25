@@ -24,11 +24,19 @@ class PaperTrader:
 
     def on_signal(self, signal: dict) -> Optional[dict]:
         direction = signal.get("direction", "YES")
-        yes_price = float(signal.get("market_price", signal.get("entry_price", 0)))
-        side_price = yes_price if direction == "YES" else 1.0 - yes_price
+        # entry_price is already the correct executable price for both YES and NO.
+        # For NO: entry_price = 1 - yes_bid (set by event_triggers._no_entry_price).
+        side_price = float(signal.get("entry_price", signal.get("market_price", 0)))
         model_prob_yes = float(signal.get("model_prob", 0.0))
         side_prob = model_prob_yes if direction == "YES" else 1.0 - model_prob_yes
-        sizing = self.calculate_position_size(self.bankroll, side_prob, side_price)
+
+        confidence = float(signal.get("confidence_score", 50.0))
+        if confidence < 40.0:
+            return None   # too uncertain to trade
+
+        sizing = self.calculate_position_size(
+            self.bankroll, side_prob, side_price, confidence_score=confidence
+        )
         if sizing["contracts"] <= 0:
             return None
         trade = self.simulate_entry(
@@ -38,7 +46,7 @@ class PaperTrader:
         )
         return trade
 
-    def calculate_position_size(self, bankroll: float, prob: float, price: float) -> dict:
+    def calculate_position_size(self, bankroll: float, prob: float, price: float, confidence_score: float = 70.0) -> dict:
         if price <= 0 or price >= 1:
             return {
                 "kelly_f": 0.0,
@@ -53,7 +61,15 @@ class PaperTrader:
         full_kelly = (b * p - q) / b
         quarter_kelly = max(0.0, full_kelly * 0.25)
         desired_stake = quarter_kelly * bankroll
-        max_stake = bankroll * config.MAX_TRADE_PCT
+
+        # Confidence-based cap: 80+ = full QK, 60-79 = half, 40-59 = quarter
+        if confidence_score >= 80.0:
+            cap_fraction = config.MAX_TRADE_PCT
+        elif confidence_score >= 60.0:
+            cap_fraction = config.MAX_TRADE_PCT * 0.5
+        else:
+            cap_fraction = config.MAX_TRADE_PCT * 0.25
+        max_stake = bankroll * cap_fraction
         stake = min(desired_stake, max_stake)
         contracts = int((stake + 1e-9) / price)
         if contracts <= 0 and stake >= price:
@@ -73,7 +89,8 @@ class PaperTrader:
         direction = signal.get("direction", "YES")
         model_prob_yes = float(signal.get("model_prob", 0.0))
         side_prob = model_prob_yes if direction == "YES" else 1.0 - model_prob_yes
-        sizing = self.calculate_position_size(self.bankroll, side_prob, float(effective_entry))
+        confidence = float(signal.get("confidence_score", 70.0))
+        sizing = self.calculate_position_size(self.bankroll, side_prob, float(effective_entry), confidence_score=confidence)
         contracts = sizing["contracts"]
         if contracts <= 0:
             raise ValueError("signal produced zero-contract paper trade")
@@ -136,9 +153,10 @@ class PaperTrader:
         taker_fee_exit = calculate_fees(contracts, exit_price, "taker")
         maker_total = float(trade.get("maker_fee_entry", 0.0)) + maker_fee_exit
         taker_total = float(trade.get("taker_fee_entry", 0.0)) + taker_fee_exit
-        net_maker = gross_pnl - maker_fee_exit
-        net_taker = gross_pnl - taker_fee_exit
-        self.bankroll += contracts * exit_price + net_maker
+        net_maker = gross_pnl - maker_total
+        net_taker = gross_pnl - taker_total
+        # Entry deducted stake + maker_fee_entry. Exit credits proceeds minus exit fee.
+        self.bankroll += contracts * exit_price - maker_fee_exit
         self.db.execute_write(
             """
             UPDATE paper_trades

@@ -35,6 +35,9 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             hrrr_maxt_f REAL,
             gfs_maxt_f REAL,
             ecmwf_maxt_f REAL,
+            aigefs_temp_raw REAL,
+            aigefs_temp_corrected REAL,
+            aigefs_correction_validated INTEGER DEFAULT 0,
             raw_data_json TEXT,
             source TEXT
         );
@@ -141,7 +144,9 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             nws_version INTEGER,
             trigger_reason TEXT,
             reasoning TEXT,
-            status TEXT DEFAULT 'ACTIVE'
+            status TEXT DEFAULT 'ACTIVE',
+            hgefs_proxy INTEGER DEFAULT 0,
+            strategy_sleeve TEXT DEFAULT 'CORE_HGEFS_GUMBEL'
         );
 
         CREATE TABLE IF NOT EXISTS paper_trades (
@@ -170,6 +175,7 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             slippage_estimate REAL,
             settlement_temp_f REAL,
             settled_correct INTEGER,
+            strategy_sleeve TEXT DEFAULT 'CORE_HGEFS_GUMBEL',
             FOREIGN KEY (signal_id) REFERENCES signals(id)
         );
 
@@ -253,6 +259,38 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
 
     c.executescript(
         """
+        CREATE TABLE IF NOT EXISTS candidate_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            city TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            target_date TEXT,
+            bracket TEXT,
+            strategy_sleeve TEXT,
+            direction TEXT,
+            yes_price REAL,
+            model_prob REAL,
+            edge_pp REAL,
+            gap_pp REAL,
+            confidence_score REAL,
+            hgefs_real INTEGER DEFAULT 0,
+            ai_source TEXT,
+            physics_count INTEGER,
+            ai_count INTEGER,
+            physics_mean REAL,
+            ai_mean REAL,
+            gate1_pass INTEGER,
+            gate2_pass INTEGER,
+            gate3_pass INTEGER,
+            gate4_pass INTEGER,
+            gate5_pass INTEGER,
+            gate6_pass INTEGER,
+            would_pass_core INTEGER,
+            actual_settlement_f REAL,
+            settled_correct INTEGER,
+            notes TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_model_runs_city_date ON model_runs(city, target_date);
         CREATE INDEX IF NOT EXISTS idx_metar_station_time ON metar_observations(station, observation_time);
         CREATE INDEX IF NOT EXISTS idx_kalshi_ticker_time ON kalshi_prices(ticker, created_at);
