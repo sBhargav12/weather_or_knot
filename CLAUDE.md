@@ -280,6 +280,24 @@ Core signals use HGEFS/Gumbel/tiered gates and require the canonical 20pp edge f
 
 ## Paper Trader
 
+`config_paper.py` is the paper-only research-promotion config surface. It must
+not be treated as live strategy approval. It keeps all research-guided knobs out
+of `config.py`:
+- `PAPER_USE_RESEARCH_WEIGHTS=True`
+- `PAPER_USE_WING_CENTRAL_SPLIT=True`
+- `PAPER_TAIL_NO_ENABLED=False`
+- `PAPER_DEEP_TAIL_NO_ENABLED=True`
+- `PAPER_REQUIRE_EXECUTION_MARGIN=True`
+- `PAPER_USE_SEASONAL_SCALING=True`
+- `PAPER_USE_REGIME_SCALING=True`
+- `PAPER_USE_CALIBRATED_PROBS=False`
+
+Paper-only execution margins are conservative placeholders: core requires
+`8pp` net edge after costs, wings `6pp`, and deep-tail `4pp`, plus a `1pp` fee
+margin. These are not live thresholds. TAIL_NO is suspended in paper but should
+remain a logged research candidate. Seasonal and regime controls are soft size
+multipliers only; they must not hard-stop whole months or regimes.
+
 `PaperTrader.on_signal()` → `simulate_entry()`: deducts `stake + maker_fee_entry` from bankroll.
 
 `_exit_trade()` bankroll update: `bankroll += contracts * exit_price - maker_fee_exit`. The `net_maker` stored in the DB is `gross_pnl - maker_total` (both legs). Do not add `net_maker` separately to the bankroll — it's already factored in through the entry deduction and exit credit.
