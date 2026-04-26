@@ -298,6 +298,37 @@ margin. These are not live thresholds. TAIL_NO is suspended in paper but should
 remain a logged research candidate. Seasonal and regime controls are soft size
 multipliers only; they must not hard-stop whole months or regimes.
 
+`paper_trader/policy.py` is the paper-only policy adapter. `PaperTrader.on_signal()`
+now evaluates candidates through it before simulated paper entry:
+- `TAIL_NO` returns `candidate_status='suspended_policy'` and logs a candidate
+  but creates no paper trade.
+- `DEEP_TAIL_NO` remains eligible when its side-space net edge clears the
+  paper execution-margin threshold.
+- CORE remains eligible only after raw edge minus estimated execution reserve
+  minus fee margin clears the paper threshold.
+- Central and wing brackets use different required net-edge thresholds.
+- Seasonal and regime multipliers scale paper stake size softly and are clamped;
+  they do not force zero-size month or regime bans.
+
+Paper-policy diagnostics are persisted on new schema columns when the database
+has them: `candidate_status`, `policy_reason`, `bracket_family`, `raw_edge_pp`,
+`est_execution_cost_pp`, `execution_margin_pp`, `est_net_edge_pp`,
+`seasonal_mult`, `regime_mult`, and `final_size_mult`. Existing DBs without
+these columns ignore them through `Database._insert()` filtering until a safe
+schema verification/migration is run.
+
+`dashboard/daily_report.py` now includes `PAPER STRATEGY HEALTH`, explicitly
+marked as paper policy only. It reports current month/regime multipliers,
+calibration flag, sleeve states, wing-vs-central thresholds, execution-margin
+formula, paper ensemble weights, candidate rejection counts, and paper trades
+by bracket family and sleeve.
+
+Latest paper-only validation:
+- Targeted command: `.venv/bin/python -m pytest tests/test_paper_policy_config.py tests/test_execution_margin_policy.py tests/test_tail_no_paper_suspension.py tests/test_wing_central_split_policy.py tests/test_seasonal_regime_scaling.py tests/test_paper_strategy_health_report.py tests/test_simulator_report.py -v`
+- Targeted result: 19 passed.
+- Full test suite: `.venv/bin/python -m pytest tests/ -v` → 184 passed, 10 warnings.
+- Safe paper integration used a temporary SQLite DB only: TAIL_NO logged and produced no trade; DEEP_TAIL_NO produced one paper trade; report rendered the new paper strategy health section.
+
 `PaperTrader.on_signal()` → `simulate_entry()`: deducts `stake + maker_fee_entry` from bankroll.
 
 `_exit_trade()` bankroll update: `bankroll += contracts * exit_price - maker_fee_exit`. The `net_maker` stored in the DB is `gross_pnl - maker_total` (both legs). Do not add `net_maker` separately to the bankroll — it's already factored in through the entry deduction and exit credit.

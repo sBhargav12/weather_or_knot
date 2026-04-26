@@ -4,7 +4,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import config_paper
 from data_store.db import Database
+from paper_trader.policy import regime_for_date, target_month
 
 NY_TZ = ZoneInfo("America/New_York")
 
@@ -23,6 +25,13 @@ def _rows_for_day(db: Database, table: str, report_date: str, extra_where: str =
     start_utc, end_utc = _report_window_utc(report_date)
     where = f"created_at >= ? AND created_at < ?{extra_where}"
     return db.execute(f"SELECT * FROM {table} WHERE {where}", (start_utc, end_utc, *params))
+
+
+def _row_get(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return default
 
 
 def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
@@ -51,6 +60,8 @@ def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
         f"  Trades exited:     {len(settled)}",
         f"  Wins / Losses:     {wins} / {losses}",
         "",
+        print_paper_strategy_health(db_path, report_date),
+        "",
         print_sleeve_summary(db_path, report_date),
         "",
         print_gate_summary(db_path, report_date),
@@ -60,6 +71,59 @@ def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
         "DATA HEALTH",
         f"  DSM events detected: {len(dsm_rows)}",
         f"  CLI events detected: {len(cli_rows)}",
+    ]
+    return "\n".join(lines)
+
+
+def print_paper_strategy_health(db_path: str, report_date: str | None = None) -> str:
+    """Report paper-policy state. This is not a live deployment report."""
+    report_date = report_date or datetime.now(NY_TZ).date().isoformat()
+    db = Database(db_path)
+    candidates = _rows_for_day(db, "candidate_signals", report_date)
+    trades = _rows_for_day(db, "paper_trades", report_date)
+    month = target_month({"target_date": report_date})
+    regime = regime_for_date(report_date)
+    seasonal_mult = config_paper.PAPER_SEASONAL_MULTIPLIERS.get(month, 1.0)
+    regime_mult = config_paper.PAPER_REGIME_MULTIPLIERS.get(regime, config_paper.PAPER_REGIME_MULTIPLIERS["unknown"])
+
+    def count_candidate_status(status: str) -> int:
+        return sum(1 for row in candidates if _row_get(row, "candidate_status") == status)
+
+    def count_trade_field(field: str, value: str) -> int:
+        return sum(1 for row in trades if str(_row_get(row, field, "")) == value)
+
+    sleeve_states = ", ".join(f"{name}={state}" for name, state in config_paper.PAPER_SLEEVE_STATES.items())
+    weights = ", ".join(f"{name}:{weight:.3f}" for name, weight in config_paper.PAPER_ENSEMBLE_WEIGHTS.items())
+    lines = [
+        "PAPER STRATEGY HEALTH (paper policy only; not live deployment)",
+        f"  Current month: {month} (seasonal multiplier {seasonal_mult:.2f})",
+        f"  Current regime: {regime} (regime multiplier {regime_mult:.2f})",
+        f"  Calibrated probabilities in paper: {'YES' if config_paper.PAPER_USE_CALIBRATED_PROBS else 'NO'}",
+        f"  Sleeve states: {sleeve_states}",
+        (
+            "  Wing/central policy: enabled; central net edge "
+            f"{config_paper.PAPER_MIN_NET_EDGE_PP_CORE:.1f}pp, "
+            f"wing {config_paper.PAPER_MIN_NET_EDGE_PP_WING:.1f}pp"
+        ),
+        (
+            "  Execution-margin policy: raw edge - est execution cost - "
+            f"{config_paper.PAPER_FEE_MARGIN_PP:.1f}pp fee margin"
+        ),
+        f"  Paper ensemble weights: {weights}",
+        "  Candidate rejection counts:",
+        f"    suspended_policy:          {count_candidate_status('suspended_policy')}",
+        f"    rejected_execution_margin: {count_candidate_status('rejected_execution_margin')}",
+        f"    rejected_regime:           {count_candidate_status('rejected_regime')}",
+        f"    rejected_seasonal:         {count_candidate_status('rejected_seasonal')}",
+        f"    insufficient_liquidity:    {count_candidate_status('insufficient_liquidity')}",
+        "  Paper trades by bracket family:",
+        f"    central:     {count_trade_field('bracket_family', 'central')}",
+        f"    lower_tail:  {count_trade_field('bracket_family', 'lower_tail')}",
+        f"    upper_tail:  {count_trade_field('bracket_family', 'upper_tail')}",
+        "  Paper trades by sleeve:",
+        f"    CORE:         {count_trade_field('strategy_sleeve', 'CORE_HGEFS_GUMBEL') + count_trade_field('strategy_sleeve', 'CORE')}",
+        f"    TAIL_NO:      {count_trade_field('strategy_sleeve', 'TAIL_NO')}",
+        f"    DEEP_TAIL_NO: {count_trade_field('strategy_sleeve', 'DEEP_TAIL_NO')}",
     ]
     return "\n".join(lines)
 

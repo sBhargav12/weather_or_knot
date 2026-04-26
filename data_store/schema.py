@@ -176,6 +176,16 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             settlement_temp_f REAL,
             settled_correct INTEGER,
             strategy_sleeve TEXT DEFAULT 'CORE_HGEFS_GUMBEL',
+            candidate_status TEXT,
+            policy_reason TEXT,
+            bracket_family TEXT,
+            raw_edge_pp REAL,
+            est_execution_cost_pp REAL,
+            execution_margin_pp REAL,
+            est_net_edge_pp REAL,
+            seasonal_mult REAL,
+            regime_mult REAL,
+            final_size_mult REAL,
             FOREIGN KEY (signal_id) REFERENCES signals(id)
         );
 
@@ -288,6 +298,16 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             would_pass_core INTEGER,
             actual_settlement_f REAL,
             settled_correct INTEGER,
+            candidate_status TEXT,
+            policy_reason TEXT,
+            bracket_family TEXT,
+            raw_edge_pp REAL,
+            est_execution_cost_pp REAL,
+            est_net_edge_pp REAL,
+            seasonal_mult REAL,
+            regime_mult REAL,
+            final_size_mult REAL,
+            execution_margin_pp REAL,
             notes TEXT
         );
 

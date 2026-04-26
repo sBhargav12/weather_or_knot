@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import config
 from data_store.db import Database
+from paper_trader.policy import PaperPolicyDecision, paper_policy_allows_trade
 
 
 def calculate_fees(contracts: int, price: float, order_type: str = "maker") -> float:
@@ -23,6 +24,11 @@ class PaperTrader:
         self.open_trades: Dict[int, dict] = {}
 
     def on_signal(self, signal: dict) -> Optional[dict]:
+        policy = paper_policy_allows_trade(signal)
+        self._log_policy_candidate(signal, policy)
+        if not policy.allowed:
+            return None
+
         direction = signal.get("direction", "YES")
         # entry_price is already the correct executable price for both YES and NO.
         # For NO: entry_price = 1 - yes_bid (set by event_triggers._no_entry_price).
@@ -35,7 +41,11 @@ class PaperTrader:
             return None   # too uncertain to trade
 
         sizing = self.calculate_position_size(
-            self.bankroll, side_prob, side_price, confidence_score=confidence
+            self.bankroll,
+            side_prob,
+            side_price,
+            confidence_score=confidence,
+            size_multiplier=policy.final_size_mult,
         )
         if sizing["contracts"] <= 0:
             return None
@@ -43,10 +53,18 @@ class PaperTrader:
             signal=signal,
             current_price=Decimal(str(side_price)),
             spread=Decimal(str(signal.get("spread", "0"))),
+            policy=policy,
         )
         return trade
 
-    def calculate_position_size(self, bankroll: float, prob: float, price: float, confidence_score: float = 70.0) -> dict:
+    def calculate_position_size(
+        self,
+        bankroll: float,
+        prob: float,
+        price: float,
+        confidence_score: float = 70.0,
+        size_multiplier: float = 1.0,
+    ) -> dict:
         if price <= 0 or price >= 1:
             return {
                 "kelly_f": 0.0,
@@ -54,6 +72,7 @@ class PaperTrader:
                 "stake": 0.0,
                 "contracts": 0,
                 "max_allowed": False,
+                "size_multiplier": size_multiplier,
             }
         b = (1 - price) / price
         p = prob
@@ -70,7 +89,7 @@ class PaperTrader:
         else:
             cap_fraction = config.MAX_TRADE_PCT * 0.25
         max_stake = bankroll * cap_fraction
-        stake = min(desired_stake, max_stake)
+        stake = min(desired_stake, max_stake) * max(0.0, float(size_multiplier))
         contracts = int((stake + 1e-9) / price)
         if contracts <= 0 and stake >= price:
             contracts = 1
@@ -81,16 +100,32 @@ class PaperTrader:
             "stake": actual_stake,
             "contracts": contracts,
             "max_allowed": desired_stake > max_stake,
+            "size_multiplier": float(size_multiplier),
         }
 
-    def simulate_entry(self, signal: dict, current_price: Decimal, spread: Decimal) -> dict:
+    def simulate_entry(
+        self,
+        signal: dict,
+        current_price: Decimal,
+        spread: Decimal,
+        policy: Optional[PaperPolicyDecision] = None,
+    ) -> dict:
+        # Paper-policy diagnostics are research-guided controls, not live-
+        # approved controls. They must be revalidated with forward paper data.
+        policy = policy or paper_policy_allows_trade(signal)
         slippage = spread / Decimal("2") if config.SLIPPAGE_HALF_SPREAD else Decimal("0")
         effective_entry = current_price + slippage
         direction = signal.get("direction", "YES")
         model_prob_yes = float(signal.get("model_prob", 0.0))
         side_prob = model_prob_yes if direction == "YES" else 1.0 - model_prob_yes
         confidence = float(signal.get("confidence_score", 70.0))
-        sizing = self.calculate_position_size(self.bankroll, side_prob, float(effective_entry), confidence_score=confidence)
+        sizing = self.calculate_position_size(
+            self.bankroll,
+            side_prob,
+            float(effective_entry),
+            confidence_score=confidence,
+            size_multiplier=policy.final_size_mult,
+        )
         contracts = sizing["contracts"]
         if contracts <= 0:
             raise ValueError("signal produced zero-contract paper trade")
@@ -111,12 +146,56 @@ class PaperTrader:
             "taker_fee_entry": taker_fee_entry,
             "maker_fee_entry": maker_fee_entry,
             "slippage_estimate": float(slippage),
+            "strategy_sleeve": signal.get("strategy_sleeve", "CORE_HGEFS_GUMBEL"),
+            "candidate_status": policy.candidate_status,
+            "policy_reason": policy.policy_reason,
+            "bracket_family": policy.bracket_family,
+            "raw_edge_pp": policy.raw_edge_pp,
+            "est_execution_cost_pp": policy.est_execution_cost_pp,
+            "execution_margin_pp": policy.fee_margin_pp,
+            "est_net_edge_pp": policy.est_net_edge_pp,
+            "seasonal_mult": policy.seasonal_mult,
+            "regime_mult": policy.regime_mult,
+            "final_size_mult": policy.final_size_mult,
         }
         trade_id = self.db.insert_paper_trade(trade)
         trade["id"] = trade_id
         self.open_trades[trade_id] = trade
         self.bankroll -= sizing["stake"] + maker_fee_entry
         return trade
+
+    def _log_policy_candidate(self, signal: dict, policy: PaperPolicyDecision) -> None:
+        """Best-effort paper-policy observability without touching live flow."""
+        try:
+            self.db.insert_candidate_signal(
+                {
+                    "city": signal.get("city", ""),
+                    "ticker": signal.get("ticker", ""),
+                    "target_date": signal.get("target_date"),
+                    "bracket": signal.get("bracket"),
+                    "strategy_sleeve": signal.get("strategy_sleeve", "CORE_HGEFS_GUMBEL"),
+                    "direction": signal.get("direction"),
+                    "yes_price": signal.get("market_price"),
+                    "model_prob": signal.get("model_prob"),
+                    "edge_pp": signal.get("gap_pp", policy.raw_edge_pp),
+                    "gap_pp": signal.get("gap_pp", policy.raw_edge_pp),
+                    "confidence_score": signal.get("confidence_score"),
+                    "would_pass_core": int(policy.allowed),
+                    "candidate_status": policy.candidate_status,
+                    "policy_reason": policy.policy_reason,
+                    "bracket_family": policy.bracket_family,
+                    "raw_edge_pp": policy.raw_edge_pp,
+                    "est_execution_cost_pp": policy.est_execution_cost_pp,
+                    "est_net_edge_pp": policy.est_net_edge_pp,
+                    "seasonal_mult": policy.seasonal_mult,
+                    "regime_mult": policy.regime_mult,
+                    "final_size_mult": policy.final_size_mult,
+                    "execution_margin_pp": policy.fee_margin_pp,
+                }
+            )
+        except Exception:
+            # Candidate logging must never break paper-trade simulation.
+            return
 
     def check_exits(self, current_prices: dict, dsm_detected: bool = False) -> None:
         for trade_id, trade in list(self.open_trades.items()):
