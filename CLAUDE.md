@@ -354,6 +354,24 @@ Latest Phase 4-11 findings, still scoped to the recent API-accessible Polymarket
 - Phase 9-10 recommendations are research/paper-first: add event-level ladder features, keep execution-margin filters paper-only, split central/range/exact/tail policy, represent event-level correlated exposure before scaling, and backfill Polymarket subgraph/on-chain data before making 24-month claims.
 - Do not change live threshold, live execution, `main.py`, `event_triggers.py`, LaunchAgent, or scheduler based on this retrospective Polymarket slice. The strongest immediate improvement is observability and research/paper diagnostics, not direct live promotion.
 
+Top-wallet wallet-analysis script:
+- Script: `scripts/polymarket_wallet_analysis.py`
+- Command: `uv run python -u scripts/polymarket_wallet_analysis.py`
+- Output directory: `data/wallet_analysis/`
+- Main report: `data/wallet_analysis/WALLET_ANALYSIS_REPORT.md`
+- Small committed artifacts: `behavioral_summary.csv`, `nyc_comparison.csv`, and `leaderboard_attempt.json`.
+- Large local-only artifacts: `all_weather_trades.csv` (~190MB), `api_activity_cache.json` (~470MB), `hold_duration_inference.csv` (~30MB), `market_cache.json` (~5MB), and `price_cache/`. These are reproducibility/cache files and should not be committed to normal Git; upload them as GitHub Release assets if they need to be shared.
+
+Latest top-wallet wallet-analysis run (`2026-04-26`, hardcoded public wallets from the deep research prompt):
+- Analyzed 223,648 Polymarket weather trades from `gopfan2`, `aenews2`, `ColdMath`, `Hans323`, `bama124`, `automatedAItradingbot`, `WeatherTraderBot`, `BigMike11`, `gopfan`, and `Kapii`, spanning 2024-09-30 to 2026-04-26.
+- The script uses public Polymarket Data API activity with timestamp-sliding pagination and caches responses. Gamma metadata is fetched by event slug, because long `condition_ids` batches can 403 and single-market queries are too slow for grouped weather ladders.
+- Price context uses up to 500 public market trade tapes by default (`WALLET_ANALYSIS_MAX_PRICE_MARKETS=500`) and falls back to captured wallet-slice trade tape for the remaining markets. This is descriptive retrospective context, not a full orderbook replay.
+- Combined median entry price was 7.9c; 57.1% of entries were below 15c and 31.8% were in the 90-100c bucket. This reinforces that top Polymarket wallets often trade extreme-price ladder/tail structures, not the same 25c-75c Kalshi core band.
+- ColdMath dominated the sample with 173,813 enriched trades. The deep-tail NO proxy found 52,939 ColdMath NO entries above 90c token price with a 99.4% resolved win rate, but only 2,862 of those rows had local NYC Gumbel probability coverage. Keep DEEP_TAIL_NO strict (`P_yes < 2%`) and research/paper-first.
+- NYC overlap vs Kalshi backtest: 369 days both had top-wallet Polymarket NYC trades and our Kalshi backtest trades; 69 NYC days had top-wallet trades but no Kalshi backtest trade. Those missed wallet-only NYC days had only a 38.5% top-wallet win rate, so this does not justify lowering the frozen 20pp live threshold.
+- Do not copy Polymarket NYC behavior directly into KXHIGHNY. Polymarket NYC is KLGA-like while Kalshi KXHIGHNY settles KNYC; the script's +2.5°F station correction is diagnostic only.
+- Recommendations from this run are paper/research diagnostics only: keep 20pp live threshold frozen, add entry-price-bucket and extreme-price diagnostics, split central/range/tail analysis, add pre-entry trend/activity features to reports, and preserve station/settlement guardrails.
+
 Settlement truth: `kalshi_result_yes` is nullable and comes only from Becker `markets.result` (`yes=True`, `no=False`, blank/active=NULL). Latest build has 287,340 rows with Kalshi settlement labels. External KNYC/IEM temperatures are `actual_temp_f_diagnostic` only and never P&L truth.
 
 Weather/fair-value features are currently NYC-only because local historical forecast/actual files are KNYC-specific. NYC rows with raw Gumbel model probability: 45,686. NYC rows with diagnostic actual temperature: 46,335. `model_prob_calibrated` and `edge_pp_calibrated` are intentionally null until calibration phases. `forecast_vintage_status` is `daily_open_meteo_no_intraday_vintage`; true forecast-run timestamps are still missing.
