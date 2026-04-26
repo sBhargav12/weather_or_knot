@@ -172,6 +172,8 @@ Current methodology:
 - IEM temperatures are kept only to measure model error and audit IEM-vs-Kalshi mismatches.
 - Open-Meteo historical data has one daily forecast row per date, so entry timing tests reuse the same forecast values and vary only market price. Treat 9 AM/11 AM/1 PM/3 PM timing as price-timing research, not true forecast-vintage research.
 - Baseline core backtest follows live `config.MIN_GAP_PP` (currently 20pp), `9AM` entry, fixed WeatherBot-style weights unless a comparison explicitly selects inverse-MAE weights. The threshold bakeoff compares 20/25/30 before promoting any new production threshold.
+- `models/distributional_temp.py` is the research-only bracket-coherent model. It maps one Gumbel daily-high distribution onto all brackets and normalizes probabilities so one day's brackets sum to 1.0.
+- `features/bracket_targets.py` builds one row per date/bracket with consensus temperature, spread, bracket-edge distances, wing/central flags, prior-day error, hours to close, regime flags, market price, and gap.
 
 Latest cached backtest output after the research-hardening pass:
 - Core baseline at 20pp is recalculated by `scripts/backtest.py`; do not treat 20pp as final strategy truth until threshold bakeoff results are reviewed.
