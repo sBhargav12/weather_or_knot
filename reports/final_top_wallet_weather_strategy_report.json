@@ -1,0 +1,91 @@
+{
+  "generated_at_et": "2026-04-26T15:08:35.409666-04:00",
+  "scope": "GO for descriptive Phase 3-6 analysis; NO-GO for durable 24-month alpha claims. Current conclusions must be scoped to the API-accessible recent slice.",
+  "wallet_profile_rows": 17,
+  "cluster_rows": 17,
+  "top_20_actionable_insights": [
+    "Recent top-wallet activity is dominated by daily temperature ladders, not broad weather.",
+    "Extreme-price trades are the strongest descriptive fingerprint.",
+    "Repeat-market concentration suggests ladder management or scale-in/out behavior.",
+    "Maker/taker truth is not recoverable from the public side field.",
+    "The current slice is only 138.8 days, not 24 months.",
+    "Several leaderboard wallets have no recent weather trades in the fetched slice.",
+    "Exact-temp Polymarket structures do not map directly to Kalshi six-bracket KXHIGH markets.",
+    "Execution stress remains the largest transfer risk for our bot.",
+    "Event-level exposure is a missing abstraction in our pipeline.",
+    "Own order lifecycle logs are the key missing execution dataset.",
+    "Wallet clusters separate into extreme-price NO/expiry specialists, ladder optimizers, and thin/unclear wallets.",
+    "Phase 4 markouts are useful but contaminated by near-resolution extreme-price dynamics.",
+    "Wings/exact/tails likely need different policies than central ranges.",
+    "Market-selection claims need a Gamma universe baseline.",
+    "Cross-venue comparisons are descriptive, not arbitrage signals.",
+    "Deep-tail behavior remains promising but fill-sensitive.",
+    "Core forecast-gate strategy is structurally different from top Polymarket wallet behavior.",
+    "Polymarket grouped-market mechanics may explain much of the ladder behavior.",
+    "Large notional-per-day wallets are not necessarily the same as best timing wallets.",
+    "Research should proceed toward backfill, event exposure, and execution logs before live changes."
+  ],
+  "top_10_repo_pipeline_changes": [
+    "Add event-level exposure and ladder-state feature builder.",
+    "Add available-market universe collector for Polymarket weather.",
+    "Add own-order lifecycle logging for paper/live proposed orders.",
+    "Split bracket-family policy and reporting further.",
+    "Add recent same-market flow features to Kalshi weather mart.",
+    "Build station-mapping guardrails for Polymarket-vs-Kalshi transfer.",
+    "Keep execution margin filters paper-only until forward validation.",
+    "Backfill Polymarket history through subgraph/on-chain sources.",
+    "Add cluster/archetype labels as research features only.",
+    "Create promotion checklist from descriptive wallet evidence to paper candidate."
+  ],
+  "top_5_win_rate_candidates": [
+    "Tighten/segment central bracket policy separately from wings/tails.",
+    "Add event-level ladder exposure so overlapping bracket risk is explicit.",
+    "Use recent flow/burst features to avoid crowded or stale entries.",
+    "Require execution-margin survival before paper entries.",
+    "Backfill and validate extreme-price sleeve behavior before promotion."
+  ],
+  "top_5_sharpe_execution_candidates": [
+    "Log proposed/unfilled/cancelled order lifecycle.",
+    "Keep maker-first but measure real fill probability.",
+    "Use event exposure caps to reduce correlated drawdown.",
+    "Stress-test every sleeve by bracket family and price bucket.",
+    "Avoid direct cross-venue transfer without settlement/station adjustment."
+  ],
+  "biggest_unknowns": [
+    "Complete 24-month wallet history.",
+    "Exact maker/passive fill status.",
+    "Unfilled order and queue-position behavior.",
+    "Full available-market universe baseline.",
+    "Whether Polymarket ladder behavior survives Kalshi fee/fill/bracket differences."
+  ],
+  "evidence_quality": {
+    "observed": [
+      "public trades, prices, sizes, timestamps, transaction hashes, market outcomes for closed markets"
+    ],
+    "inferred": [
+      "archetypes, ladder usage proxies, capital recycling proxies, trade-to-trade markouts"
+    ],
+    "unobservable": [
+      "passive fill probability, queue position, full inventory path, complete 24-month behavior"
+    ]
+  },
+  "files_created": [
+    "research/polymarket_research_common.py",
+    "research/polymarket_alpha_timing.py",
+    "research/polymarket_market_selection_edge.py",
+    "research/polymarket_risk_efficiency.py",
+    "research/polymarket_wallet_clustering.py",
+    "research/cross_venue_compare_wallets_vs_bot.py",
+    "research/polymarket_write_strategy_reports.py",
+    "reports/polymarket_alpha_timing.md",
+    "reports/polymarket_market_selection_edge.md",
+    "reports/polymarket_risk_efficiency.md",
+    "reports/polymarket_wallet_clusters.md",
+    "reports/cross_venue_compare_wallets_vs_bot.md",
+    "reports/polymarket_wallet_strategy_implications.md",
+    "reports/win_rate_improvement_playbook.md",
+    "reports/final_top_wallet_weather_strategy_report.md",
+    "reports/final_top_wallet_weather_strategy_report.json"
+  ],
+  "git_diff_stat": " CLAUDE.md            |   77 ++\n logs/launchd.out.log | 2637 ++++++++++++++++++++++++++++++++++++++++++++++++++\n logs/pipeline.log    | 2637 ++++++++++++++++++++++++++++++++++++++++++++++++++\n 3 files changed, 5351 insertions(+)\n"
+}

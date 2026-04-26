@@ -238,6 +238,122 @@ Canonical row: one row per `ticker x hourly decision_time_et` for KXHIGH daily h
 
 Important Phase 2 leakage guard: Becker `markets` parquet rows are latest metadata rows, not historical orderbook snapshots. Therefore `yes_bid`, `yes_ask`, `no_bid`, `no_ask`, `spread_yes`, and `spread_no` are intentionally null in the mart. Point-in-time market state is derived from executions only: latest prior trade price, trailing 15m/60m trade counts, signed flow, taker-YES share, VWAP, price change, and realized 60m volatility.
 
+---
+
+## Polymarket Weather Trader Research
+
+Phase 1 top-trader collection is reproducible with:
+
+```bash
+uv run python research/collect_polymarket_weather_phase1.py
+
+# If raw trades already exist and only Gamma outcome metadata needs repair:
+uv run python research/collect_polymarket_weather_phase1.py --refresh-outcomes-from-cache
+
+# Regenerate the console table and markdown report from cached artifacts:
+uv run python research/collect_polymarket_weather_phase1.py --from-cache
+```
+
+Generated outputs:
+- `data/research/polymarket_top_weather_traders.csv`
+- `data/research/polymarket_trades_raw.parquet`
+- `data/research/polymarket_market_outcomes.parquet`
+- `data/research/polymarket_phase1_summary.json`
+- `reports/polymarket_weather_trader_phase1.md`
+
+Latest Phase 1 run used public Polymarket endpoints only:
+- `https://data-api.polymarket.com/v1/leaderboard` with `category=WEATHER`, `timePeriod=ALL`, `orderBy=VOL`, `limit=20`.
+- `https://data-api.polymarket.com/trades` by proxy wallet, `takerOnly=false`, paginated through the current public offset cap.
+- `https://gamma-api.polymarket.com/events?slug=<eventSlug>` for grouped weather-market metadata and settlement inference. This is more reliable for temperature events than `markets?condition_ids=<id>`, which returned many empty rows.
+
+Latest cached Phase 1 collection:
+- Top-20 seed list comes from all-time Polymarket weather leaderboard volume because the public leaderboard does not expose an exact 24-month rank window.
+- Trades are filtered to the last 24 months after fetch, but the public Data API currently caps wallet trade pagination around offset 3000. Every top-20 wallet hit that cap, so fetched trade counts are lower bounds, not complete 24-month counts.
+- Saved `41,709` weather trade rows from `17` wallets with fetched weather trades, covering `5,327` unique markets and `1,448` event slugs.
+- Timestamp range in the saved raw trade set: `2025-12-08T17:05:53-05:00` to `2026-04-26T13:57:24-04:00`. The shorter-than-24-month range is caused by the Data API pagination cap, not the requested research window.
+- Gamma event metadata resolved all `5,327` market rows with zero fetch-missing rows. `4,327` markets were closed with inferred resolution from `outcomePrices`; open/unresolved markets remain null.
+
+Interpretation: good Phase 1 public-data seed for strategy-pattern research, but not yet a complete 24-month wallet history. Phase 2 should either add subgraph/on-chain backfill for older trades or explicitly scope trader-pattern inference to the recent public Data API slice.
+
+Phase 2 readiness audit is reproducible with:
+
+```bash
+uv run python research/polymarket_phase2_readiness.py
+```
+
+Generated outputs:
+- `data/research/polymarket_phase2_readiness.json`
+- `reports/polymarket_phase2_readiness.md`
+
+Latest Phase 2 readiness verdict:
+- `GO` for descriptive Phase 3-6 analysis, but `NO-GO` for durable 24-month alpha claims.
+- Scope all conclusions to the API-accessible recent slice unless subgraph/on-chain backfill is added.
+- Active fetched wallets: 17 of the top-20 leaderboard wallets.
+- Saved trade rows: 41,709; unique markets: 5,327; unique event slugs: 1,448.
+- Timestamp span: 2025-12-08 17:05:53 ET to 2026-04-26 13:57:24 ET, about 138.8 days or 19.0% of the requested 24-month window.
+- Observability: 100% transaction hashes, 100% outcome metadata rows, 69.8% resolved trade rows, 96.5% rows with same-market trade context, 79.5% rows with a later same-market trade within 60 minutes, 99.4% temperature rows.
+- Biggest blind spots: all top-20 wallets hit the public trade-history offset cap; no historical orderbook snapshots, queue position, or unfilled passive orders; no complete available-market baseline for selection inference; Polymarket grouped/negative-risk mechanics do not transfer directly to Kalshi.
+
+Interpretation: the current slice is strong enough for recent-slice wallet profiles, provisional clustering, sizing/cadence analysis, and trade-to-trade markout research. It is not strong enough to claim complete top-wallet behavior over 24 months or exact maker/passive fill probabilities.
+
+Phase 3 wallet profiles are reproducible with:
+
+```bash
+uv run python research/polymarket_wallet_profiles.py
+```
+
+Generated outputs:
+- `data/research/polymarket_wallet_profiles.parquet`
+- `reports/polymarket_wallet_profiles.md`
+
+Latest Phase 3 wallet-profile findings, still scoped to the recent API-accessible slice:
+- 17 wallets profiled, representing 41,709 saved trade rows.
+- Provisional archetypes: 8 `ladder optimizer`, 6 `expiry / resolution specialist`, 3 `mixed / unclear`.
+- Most active wallets in the slice trade almost entirely daily temperature markets, often with one-degree or exact-temperature grouped ladder markets rather than broad non-temperature weather.
+- Extreme-price activity is the dominant behavioral separator: many high-volume wallets have 90%+ of trades at ≤10c or ≥90c.
+- Repeat-market/event concentration is the second major separator and likely captures ladder construction, scale-in/scale-out, or near-resolution inventory management.
+- `maker/taker` role remains explicitly unobservable from these public artifacts. The public Data API `side` is wallet action, not proof of passive/aggressive execution or maker rebate capture.
+- The archetypes are provisional fingerprints for Phase 4-7 research, not proof of durable alpha or exact replication targets.
+
+Phases 4-11 top-wallet strategy research are reproducible with:
+
+```bash
+uv run python research/polymarket_alpha_timing.py
+uv run python research/polymarket_market_selection_edge.py
+uv run python research/polymarket_risk_efficiency.py
+uv run python research/polymarket_wallet_clustering.py
+uv run python research/cross_venue_compare_wallets_vs_bot.py
+uv run python research/polymarket_write_strategy_reports.py
+```
+
+Generated outputs:
+- `data/research/polymarket_alpha_timing.parquet`
+- `data/research/polymarket_alpha_timing_wallet_summary.parquet`
+- `reports/polymarket_alpha_timing.md`
+- `data/research/polymarket_market_selection_edge.parquet`
+- `data/research/polymarket_market_selection_wallet.parquet`
+- `reports/polymarket_market_selection_edge.md`
+- `data/research/polymarket_risk_efficiency.parquet`
+- `reports/polymarket_risk_efficiency.md`
+- `data/research/polymarket_wallet_clusters.parquet`
+- `reports/polymarket_wallet_clusters.md`
+- `data/research/cross_venue_compare_wallets_vs_bot.parquet`
+- `reports/cross_venue_compare_wallets_vs_bot.md`
+- `reports/polymarket_wallet_strategy_implications.md`
+- `reports/win_rate_improvement_playbook.md`
+- `reports/final_top_wallet_weather_strategy_report.md`
+- `reports/final_top_wallet_weather_strategy_report.json`
+
+Latest Phase 4-11 findings, still scoped to the recent API-accessible Polymarket slice:
+- Phase 4 markouts are trade-to-trade within the captured public API slice, not full orderbook paths. Large positive/negative markouts often reflect extreme-price or near-resolution dynamics and must not be read as exact alpha or price-impact truth.
+- 60-minute markout coverage: 75.5% of 41,709 trades. Best 60m signed-markout wallets in the slice were mostly `expiry / resolution specialist` profiles (`OraculumNobius`, `Dreamer3bcbcd6c`, `NoonienSoong`, `meropi`, `HondaCivic`). Worst 60m markout wallets were mostly `ladder optimizer` profiles (`dpnd`, `TENETENET`, `VibeTrader`, `IsabelaEstrellaPaz`, `ColdMath`), which may reflect ladder construction where short-term markout is not the only objective.
+- Phase 5 market selection: top wallets overwhelmingly select daily temperature markets. Segment counts in the recent slice: `daily_temperature/exact_temp` 27,322 trades, `daily_temperature/range` 11,736, `daily_temperature/lower_tail` 2,405. Selection claims remain incomplete without a full available-market universe baseline.
+- Phase 6 risk/capital proxies: strongest observed notional-per-active-day wallets were `KingZeManel`, `OraculumNobius`, `largeleeks888`, `HondaCivic`, and `Dreamer3bcbcd6c`. `oVyg7f`, `IsabelaEstrellaPaz`, `dpnd`, `TENETENET`, `Poligarch`, `meropi`, and `VibeTrader` show strong same-event ladder/repeat-market proxies. True inventory, collateral, and unfilled order paths remain unobservable.
+- Phase 7 clustering selected `k=3` with weak/moderate silhouette (`0.258`): `extreme-price NO / expiry specialists` (8 wallets), `temperature ladder optimizers` (7 wallets), and `thin recent-slice / unclear` (2 wallets). Cluster assignments are provisional until backfilled.
+- Phase 8 cross-venue comparison: top Polymarket wallets behave more like extreme-price/event-ladder traders than the current KXHIGHNY core HGEFS/Gumbel gate strategy. Missing features for this repo: event-level ladder state, bracket-family split diagnostics, recent same-market flow/burst features, own order lifecycle logs, and station/settlement transfer guardrails.
+- Phase 9-10 recommendations are research/paper-first: add event-level ladder features, keep execution-margin filters paper-only, split central/range/exact/tail policy, represent event-level correlated exposure before scaling, and backfill Polymarket subgraph/on-chain data before making 24-month claims.
+- Do not change live threshold, live execution, `main.py`, `event_triggers.py`, LaunchAgent, or scheduler based on this retrospective Polymarket slice. The strongest immediate improvement is observability and research/paper diagnostics, not direct live promotion.
+
 Settlement truth: `kalshi_result_yes` is nullable and comes only from Becker `markets.result` (`yes=True`, `no=False`, blank/active=NULL). Latest build has 287,340 rows with Kalshi settlement labels. External KNYC/IEM temperatures are `actual_temp_f_diagnostic` only and never P&L truth.
 
 Weather/fair-value features are currently NYC-only because local historical forecast/actual files are KNYC-specific. NYC rows with raw Gumbel model probability: 45,686. NYC rows with diagnostic actual temperature: 46,335. `model_prob_calibrated` and `edge_pp_calibrated` are intentionally null until calibration phases. `forecast_vintage_status` is `daily_open_meteo_no_intraday_vintage`; true forecast-run timestamps are still missing.
