@@ -171,17 +171,17 @@ Current methodology:
 - P&L and win/loss are settled from `kalshi_result_yes`, not reconstructed IEM temperatures.
 - IEM temperatures are kept only to measure model error and audit IEM-vs-Kalshi mismatches.
 - Open-Meteo historical data has one daily forecast row per date, so entry timing tests reuse the same forecast values and vary only market price. Treat 9 AM/11 AM/1 PM/3 PM timing as price-timing research, not true forecast-vintage research.
-- Baseline core backtest uses `gap > 25pp`, `9AM` entry, fixed WeatherBot-style weights unless a comparison explicitly selects inverse-MAE weights.
+- Baseline core backtest follows live `config.MIN_GAP_PP` (currently 20pp), `9AM` entry, fixed WeatherBot-style weights unless a comparison explicitly selects inverse-MAE weights. The threshold bakeoff compares 20/25/30 before promoting any new production threshold.
 
 Latest cached backtest output after the research-hardening pass:
-- Core baseline: 341 trades, 60.4% win rate, +$27.87 net per $1/trade, max drawdown -$14.59.
+- Core baseline at 20pp is recalculated by `scripts/backtest.py`; do not treat 20pp as final strategy truth until threshold bakeoff results are reviewed.
 - Walk-forward inverse-MAE core: 273 trades, 62.3% win rate, +$27.70 net.
 - Global inverse-MAE comparison: 325 trades, 64.9% win rate, +$41.92 net. Treat this as retrospective fit, not proof.
 - Settlement audit: 3426/3426 market rows have Kalshi result labels; 60 market-level IEM/Kalshi mismatches; 5 trade-level mismatches.
 - `DEEP_TAIL_NO` baseline: 492 trades, 94.1% win rate, +$46.29 net.
 - `DEEP_TAIL_NO` stress tests: +3¢ worse fills still +$31.89; +5¢ worse fills still +$23.42; missing best 10% plus +3¢ still +$22.55.
 
-Interpretation: good research baseline, not proof of durable edge. The next research requirement is true forecast-vintage data by entry time.
+Interpretation: good research baseline, not proof of durable edge. Current research requirement: threshold bakeoff plus true forecast-vintage data by entry time.
 
 ---
 

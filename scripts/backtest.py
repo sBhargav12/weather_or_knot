@@ -21,6 +21,11 @@ from scipy.stats import gumbel_r
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config
+
 DATA_DIR = ROOT / "data"
 MARKETS_CSV = DATA_DIR / "kxhighny_markets.csv"
 PRICES_CSV = DATA_DIR / "kxhighny_prices.csv"
@@ -36,8 +41,9 @@ OPEN_METEO_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 NY_TZ = ZoneInfo("America/New_York")
 START_DATE = date(2024, 10, 1)
 END_DATE = date(2026, 4, 25)
-DEFAULT_CORE_GAP_PP = 25.0
+DEFAULT_CORE_GAP_PP = float(config.MIN_GAP_PP)
 DEFAULT_ENTRY_TIMING = "9AM"
+THRESHOLD_BAKEOFF_GAPS = [20, 25, 30]
 TAIL_NO_PROB_MAX = 0.30
 TAIL_NO_YES_PRICE_MIN = 0.55
 DEEP_TAIL_NO_PROB_MAX = 0.02
@@ -984,7 +990,7 @@ def stress_fill_realism(trades: pd.DataFrame) -> dict:
     }
 
 
-def walk_forward_validation(engine: BacktestEngine, min_train_months: int = 3) -> dict:
+def walk_forward_validation(engine: BacktestEngine, gap_threshold: float = DEFAULT_CORE_GAP_PP, min_train_months: int = 3) -> dict:
     months = sorted(engine.dataset["target_date"].dropna().astype(str).str[:7].unique())
     rows = []
     all_test_trades = []
@@ -999,7 +1005,7 @@ def walk_forward_validation(engine: BacktestEngine, min_train_months: int = 3) -
             continue
         trades = engine.run(
             BacktestConfig(
-                gap_threshold=DEFAULT_CORE_GAP_PP,
+                gap_threshold=gap_threshold,
                 entry_timing=DEFAULT_ENTRY_TIMING,
                 ensemble_weights=weights,
                 label="walk_forward_inverse_mae",
@@ -1022,10 +1028,33 @@ def walk_forward_validation(engine: BacktestEngine, min_train_months: int = 3) -
     combined = pd.concat(all_test_trades, ignore_index=True) if all_test_trades else pd.DataFrame()
     return {
         "method": "expanding-window inverse-MAE weights; train on prior months, test on next month",
+        "gap_threshold_pp": float(gap_threshold),
         "min_train_months": min_train_months,
         "overall": summarize_trades(combined),
         "months": rows,
     }
+
+
+def threshold_bakeoff(engine: BacktestEngine) -> dict:
+    out = {}
+    for threshold in THRESHOLD_BAKEOFF_GAPS:
+        trades = engine.run(
+            BacktestConfig(
+                gap_threshold=float(threshold),
+                entry_timing=DEFAULT_ENTRY_TIMING,
+                label=f"threshold_{threshold}pp",
+            )
+        )
+        core = trades[trades["sleeve"] == "CORE"] if not trades.empty else trades
+        deep = trades[trades["sleeve"] == "DEEP_TAIL_NO"] if not trades.empty else trades
+        stress = stress_fill_realism(trades)["extra_3c_entry_cost"]
+        out[f"{threshold}pp"] = {
+            "core": summarize_trades(core),
+            "deep_tail_no": summarize_trades(deep),
+            "deep_tail_no_stress_3c": stress,
+            "walk_forward": walk_forward_validation(engine, gap_threshold=float(threshold))["overall"],
+        }
+    return out
 
 
 def seasonal_multipliers(monthly: dict) -> dict:
@@ -1066,6 +1095,17 @@ def print_summary(summary: dict) -> None:
         item = summary["sensitivity"][f"gap_gt_{threshold}pp"]
         suffix = "  <- baseline threshold" if threshold == summary["baseline"]["gap_threshold_pp"] else ""
         print(f"  Gap > {threshold}pp: win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}{suffix}")
+
+    print("\nTHRESHOLD BAKEOFF (settlement-audited):")
+    print("  Threshold | Core trades | Core win | Core P&L | WF P&L | DEEP +3c stress")
+    for label, item in summary["threshold_bakeoff"].items():
+        core_item = item["core"]
+        wf_item = item["walk_forward"]
+        stress_item = item["deep_tail_no_stress_3c"]
+        print(
+            f"  {label:>9} | {core_item['trades']:>11} | {core_item['win_rate']:>8.1%} | "
+            f"${core_item['net_pnl']:>7.2f} | ${wf_item['net_pnl']:>6.2f} | ${stress_item['net_pnl']:>14.2f}"
+        )
 
     print("\nENTRY TIMING comparison:")
     for timing in ["9AM", "11AM", "1PM", "3PM"]:
@@ -1156,6 +1196,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
     audit = settlement_audit(engine, trades)
     fill_stress = {"DEEP_TAIL_NO": stress_fill_realism(trades)}
     walk_forward = walk_forward_validation(engine)
+    bakeoff = threshold_bakeoff(engine)
     learned_trades = engine.run(
         BacktestConfig(
             gap_threshold=DEFAULT_CORE_GAP_PP,
@@ -1183,6 +1224,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
         "trading_days": int(core["date"].nunique()) if not core.empty else 0,
         "core": summarize_trades(core),
         "sensitivity": sensitivity_rows,
+        "threshold_bakeoff": bakeoff,
         "entry_timing": timing_rows,
         "seasonal": seasonal,
         "confidence": confidence,
