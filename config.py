@@ -32,9 +32,9 @@ STOP_LOSS_DIFF = Decimal("0.20")
 MIN_YES_PRICE = Decimal("0.25")
 MAX_YES_PRICE = Decimal("0.75")
 NEVER_HOLD_ABOVE = Decimal("0.70")
-# Strict backtest v2 favored a higher production baseline than the old 15/20pp
-# paper-trading gate. Keep the 35-40pp dead zone below as a separate hard block.
-MIN_GAP_PP = 25.0
+# Canonical live Gate 2 edge threshold. Keep the 35-40pp dead zone below as a
+# separate hard block.
+MIN_GAP_PP = 20.0
 DEAD_ZONE_LO = 35.0
 DEAD_ZONE_HI = 40.0
 

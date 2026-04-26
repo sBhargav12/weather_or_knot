@@ -122,7 +122,7 @@ Gates are in `signal_engine/gate_checker.py`; thresholds are in `config.py`. The
 | Gate | Condition | Key config |
 |------|-----------|------------|
 | 1 | `abs(physics_mean - ai_mean) <= 1.5°F` AND both spreads `< 3.0°F` | `HGEFS_MAX_SPREAD_BETWEEN=1.5`, `HGEFS_MAX_SUBSET_SPREAD=3.0` |
-| 2 | `abs(gap_pp) > 25pp` where `gap_pp = (gumbel_prob - market_price) * 100`, excluding 35–40pp dead zone | `MIN_GAP_PP=25.0`, `DEAD_ZONE_LO=35`, `DEAD_ZONE_HI=40` |
+| 2 | `abs(gap_pp) > 20pp` where `gap_pp = (gumbel_prob - market_price) * 100`, excluding 35–40pp dead zone | `MIN_GAP_PP=20.0`, `DEAD_ZONE_LO=35`, `DEAD_ZONE_HI=40` |
 | 3 | `0.25 <= entry_price <= 0.75` | `MIN_YES_PRICE`, `MAX_YES_PRICE` |
 | 4 | Dead-zone confidence modifier (diagnostic; hard block is in Gate 2) | `DEAD_ZONE_LO=35`, `DEAD_ZONE_HI=40` |
 | 5 | 9:51 AM ET METAR within 8°F of bracket center (YES) or outside 3°F (NO). Missing reading is neutral. | `METAR_YES_MAX_DISTANCE=8`, `METAR_NO_MIN_DISTANCE=3` |
@@ -187,7 +187,7 @@ Interpretation: good research baseline, not proof of durable edge. The next rese
 
 ## Strategy Sleeves
 
-Core signals use HGEFS/Gumbel/tiered gates and require the stricter 25pp edge floor.
+Core signals use HGEFS/Gumbel/tiered gates and require the canonical 20pp edge floor from `config.MIN_GAP_PP`.
 
 `TAIL_NO`:
 - Research/log-only by default: `ENABLE_TAIL_NO_TRADES = False`.
@@ -250,7 +250,7 @@ DSM_CANCEL_TIME_ET = "16:15"
 MAX_HOLD_TIME_ET   = "23:00"
 MIN_YES_PRICE = Decimal("0.25")        # below this → longshot trap
 MAX_YES_PRICE = Decimal("0.75")        # above this → NWS error risk
-MIN_GAP_PP    = 25.0
+MIN_GAP_PP    = 20.0
 ```
 
 Sleeve controls:
