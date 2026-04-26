@@ -218,6 +218,22 @@ Latest Phase 1 inventory:
 
 This inventory is research-only. It does not alter live pipeline behavior, thresholds, paper trading, LaunchAgent, or order execution.
 
+Phase 2 weather mart:
+- Build command: `.venv/bin/python research/build_weather_mart.py`
+- SQL transform: `research/sql/weather_mart.sql`
+- Full mart: `data/research/weather_mart.parquet`
+- Sample mart: `data/research/weather_mart_sample.parquet`
+- Metadata: `data/research/weather_mart_metadata.json`
+- Dictionary: `reports/weather_mart_dictionary.md`
+
+Canonical row: one row per `ticker x hourly decision_time_et` for KXHIGH daily high-temperature markets with at least one trade in the trailing 60 minutes. The mart covers KXHIGHNY, KXHIGHCHI, KXHIGHAUS, KXHIGHMIA, KXHIGHDEN, KXHIGHPHIL, KXHIGHLAX, and the old KXHIGHHOU slice. Latest build: 288,707 rows, 15,468 unique tickers, 2,722 unique event tickers, target dates 2024-10-24 to 2025-11-24, all 24 decision hours represented. City ticker counts: AUS 2,298; CHI 2,290; DEN 2,152; HOU 372; LAX 1,842; MIA 2,147; NYC 2,288; PHIL 2,079.
+
+Important Phase 2 leakage guard: Becker `markets` parquet rows are latest metadata rows, not historical orderbook snapshots. Therefore `yes_bid`, `yes_ask`, `no_bid`, `no_ask`, `spread_yes`, and `spread_no` are intentionally null in the mart. Point-in-time market state is derived from executions only: latest prior trade price, trailing 15m/60m trade counts, signed flow, taker-YES share, VWAP, price change, and realized 60m volatility.
+
+Settlement truth: `kalshi_result_yes` is nullable and comes only from Becker `markets.result` (`yes=True`, `no=False`, blank/active=NULL). Latest build has 287,340 rows with Kalshi settlement labels. External KNYC/IEM temperatures are `actual_temp_f_diagnostic` only and never P&L truth.
+
+Weather/fair-value features are currently NYC-only because local historical forecast/actual files are KNYC-specific. NYC rows with raw Gumbel model probability: 45,686. NYC rows with diagnostic actual temperature: 46,335. `model_prob_calibrated` and `edge_pp_calibrated` are intentionally null until calibration phases. `forecast_vintage_status` is `daily_open_meteo_no_intraday_vintage`; true forecast-run timestamps are still missing.
+
 ---
 
 ## Strategy Sleeves
