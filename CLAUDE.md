@@ -175,6 +175,7 @@ Current methodology:
 - `models/distributional_temp.py` is the research-only bracket-coherent model. It maps one Gumbel daily-high distribution onto all brackets and normalizes probabilities so one day's brackets sum to 1.0.
 - `features/bracket_targets.py` builds one row per date/bracket with consensus temperature, spread, bracket-edge distances, wing/central flags, prior-day error, hours to close, regime flags, market price, and gap.
 - The bracket-coherent model has optional isotonic calibration for research. Calibrated probabilities are renormalized across each daily bracket set so total mass remains 1.0. Backtest output compares old independent probabilities vs coherent raw vs coherent calibrated probabilities using Brier score, log loss, mass checks, and central-vs-wing breakdowns.
+- Backtest regime reporting segments core-trade economics and coherent raw probability quality by upstream model eras: `pre_HGEFS`, `HGEFS_to_AIFS`, `AIFS_to_NBM_v43`, `NBM_v43_to_AIFS_ENS`, `AIFS_ENS_to_NBM_v50`, and `NBM_v50_on`. Each period prints overall, central-only, and wing-only trades, win rate, net P&L, Sharpe, Brier score, and log loss. This is research-only and does not change live thresholds or execution.
 
 Latest cached backtest output after the research-hardening pass:
 - Core baseline at 20pp is recalculated by `scripts/backtest.py`; do not treat 20pp as final strategy truth until threshold bakeoff results are reviewed.
@@ -184,6 +185,7 @@ Latest cached backtest output after the research-hardening pass:
 - `DEEP_TAIL_NO` baseline: 492 trades, 94.1% win rate, +$46.29 net.
 - `DEEP_TAIL_NO` stress tests: +3¢ worse fills still +$31.89; +5¢ worse fills still +$23.42; missing best 10% plus +3¢ still +$22.55.
 - Probability evaluation holdout: old and coherent raw both Brier 0.1354 / log loss 0.4401 / mass 1.0000; coherent calibrated improves to Brier 0.1131 / log loss 0.3489 / mass 1.0000. Calibrated holdout is much stronger on wings (Brier 0.0387) than central brackets (Brier 0.1503), so future calibration may need central-vs-wing separation.
+- Regime report from the same cached run: `pre_HGEFS` was strongest overall (47 core trades, 80.9% win rate, +$12.79, Brier 0.0992); the long `AIFS_ENS_to_NBM_v50` period was much weaker economically (220 trades, 56.4%, +$4.74, Brier 0.1361). Central brackets remain materially harder than wings in every sufficiently populated era: central log loss was 0.4276/0.6818/0.4976/0.6675/0.5788/0.4330 across periods, while wing log loss was 0.0467/0.1966/0.1034/0.2309/0.1810/0.1357. The `NBM_v50_on` slice has only 8 core trades, so treat it as a smoke signal, not evidence.
 
 Interpretation: good research baseline, not proof of durable edge. Current research requirement: threshold bakeoff plus true forecast-vintage data by entry time.
 

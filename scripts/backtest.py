@@ -50,6 +50,23 @@ TAIL_NO_YES_PRICE_MIN = 0.55
 DEEP_TAIL_NO_PROB_MAX = 0.02
 DEEP_TAIL_NO_YES_PRICE_MIN = 0.05
 
+VERSION_BOUNDARIES = {
+    "2024-12-17": ("regime_hgefs", "HGEFS_operational"),
+    "2025-02-25": ("regime_aifs", "ECMWF_AIFS_single_live"),
+    "2025-05-27": ("regime_nbm_v43", "NBM_v4.3_upgrade"),
+    "2025-07-01": ("regime_aifs_ens", "ECMWF_AIFS_ENS_live"),
+    "2026-04-15": ("regime_nbm_v50", "NBM_v5.0_upgrade"),
+}
+
+REGIME_PERIODS = [
+    ("pre_HGEFS", START_DATE.isoformat(), "2024-12-16"),
+    ("HGEFS_to_AIFS", "2024-12-17", "2025-02-24"),
+    ("AIFS_to_NBM_v43", "2025-02-25", "2025-05-26"),
+    ("NBM_v43_to_AIFS_ENS", "2025-05-27", "2025-06-30"),
+    ("AIFS_ENS_to_NBM_v50", "2025-07-01", "2026-04-14"),
+    ("NBM_v50_on", "2026-04-15", END_DATE.isoformat()),
+]
+
 MODEL_COLUMNS = {
     "gfs": "gfs_maxt",
     "ecmwf": "ecmwf_maxt",
@@ -237,6 +254,18 @@ def summarize_trades(df: pd.DataFrame) -> dict:
         "max_drawdown": max_drawdown(df["net"]),
         "avg_return": float((df["net"] / df["entry_price"].replace(0, np.nan)).mean()),
     }
+
+
+def add_regime_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """Add binary model-version regime flags to a DataFrame with date-like rows."""
+    out = df.copy()
+    date_col = "date" if "date" in out.columns else "target_date"
+    if date_col not in out.columns:
+        return out
+    dates = out[date_col].astype(str)
+    for cutoff, (column, _label) in VERSION_BOUNDARIES.items():
+        out[column] = (dates >= cutoff).astype(int)
+    return out
 
 
 def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
@@ -815,6 +844,7 @@ class BacktestEngine:
                 "date": row["target_date"],
                 "ticker": row["ticker"],
                 "bracket": row["bracket"],
+                "bracket_type": row["bracket_type"],
                 "sleeve": sleeve,
                 "gap_pp": gap_pp,
                 "direction": direction,
@@ -1058,7 +1088,7 @@ def threshold_bakeoff(engine: BacktestEngine) -> dict:
     return out
 
 
-def probability_evaluation(engine: BacktestEngine) -> dict:
+def probability_rows(engine: BacktestEngine) -> pd.DataFrame:
     rows = []
     weights = normalize_weights(FIXED_ENSEMBLE_WEIGHTS)
     required = ["kalshi_result_yes", "gfs_maxt", "ecmwf_maxt", "ukmo_maxt", "nbm_maxt"]
@@ -1099,9 +1129,14 @@ def probability_evaluation(engine: BacktestEngine) -> dict:
                 }
             )
 
-    prob_df = pd.DataFrame(rows).dropna()
+    return pd.DataFrame(rows).dropna()
+
+
+def probability_evaluation(engine: BacktestEngine) -> dict:
+    prob_df = probability_rows(engine)
     if prob_df.empty:
         return {}
+    model = DistributionalTempModel()
     dates = sorted(prob_df["date"].unique())
     split = max(1, len(dates) // 2)
     train_dates = set(dates[:split])
@@ -1142,6 +1177,76 @@ def probability_evaluation(engine: BacktestEngine) -> dict:
 def _evaluate_probability_frame(model: DistributionalTempModel, frame: pd.DataFrame, probability_col: str, actual: pd.DataFrame) -> dict:
     predicted = frame[["date", "ticker", "bracket_type", probability_col]].rename(columns={probability_col: "probability"})
     return model.evaluate(predicted, actual)
+
+
+def bracket_family(value: Any) -> str:
+    return "central" if str(value) == "central" else "wing"
+
+
+def _empty_regime_slice() -> dict:
+    return {
+        "trades": 0,
+        "win_rate": 0.0,
+        "net_pnl": 0.0,
+        "sharpe": 0.0,
+        "brier_score": 0.0,
+        "log_loss": 0.0,
+        "prob_rows": 0,
+        "prob_days": 0,
+    }
+
+
+def _regime_slice_summary(trades: pd.DataFrame, probs: pd.DataFrame) -> dict:
+    if trades.empty and probs.empty:
+        return _empty_regime_slice()
+    trade_summary = summarize_trades(trades)
+    if probs.empty:
+        prob_summary = _empty_regime_slice()
+    else:
+        model = DistributionalTempModel()
+        actual = probs[["date", "ticker", "bracket_type", "outcome"]]
+        prob_summary = _evaluate_probability_frame(model, probs, "coherent_probability", actual)
+    return {
+        "trades": trade_summary["trades"],
+        "win_rate": trade_summary["win_rate"],
+        "net_pnl": trade_summary["net_pnl"],
+        "sharpe": trade_summary["sharpe"],
+        "brier_score": prob_summary["brier_score"],
+        "log_loss": prob_summary["log_loss"],
+        "prob_rows": prob_summary.get("n_rows", 0),
+        "prob_days": prob_summary.get("n_days", 0),
+    }
+
+
+def regime_report(engine: BacktestEngine, trades: pd.DataFrame) -> list[dict]:
+    core = trades[trades["sleeve"] == "CORE"].copy() if not trades.empty else trades.copy()
+    probs = probability_rows(engine)
+    if not probs.empty:
+        probs["family"] = probs["bracket_type"].map(bracket_family)
+    if not core.empty:
+        core["family"] = core["bracket_type"].map(bracket_family)
+
+    rows = []
+    for label, start, end in REGIME_PERIODS:
+        period_trades = core[(core["date"] >= start) & (core["date"] <= end)] if not core.empty else core
+        period_probs = probs[(probs["date"] >= start) & (probs["date"] <= end)] if not probs.empty else probs
+        rows.append(
+            {
+                "label": label,
+                "start": start,
+                "end": end,
+                "overall": _regime_slice_summary(period_trades, period_probs),
+                "central": _regime_slice_summary(
+                    period_trades[period_trades["family"] == "central"] if not period_trades.empty else period_trades,
+                    period_probs[period_probs["family"] == "central"] if not period_probs.empty else period_probs,
+                ),
+                "wing": _regime_slice_summary(
+                    period_trades[period_trades["family"] == "wing"] if not period_trades.empty else period_trades,
+                    period_probs[period_probs["family"] == "wing"] if not period_probs.empty else period_probs,
+                ),
+            }
+        )
+    return rows
 
 
 def seasonal_multipliers(monthly: dict) -> dict:
@@ -1252,6 +1357,17 @@ def print_summary(summary: dict) -> None:
     print("  Central vs wing (coherent calibrated holdout):")
     for group, item in prob_eval["coherent_calibrated_holdout"]["central_vs_wing"].items():
         print(f"    {group}: rows {item['rows']}, Brier {item['brier_score']:.4f}, log loss {item['log_loss']:.4f}")
+    print("\nREGIME REPORT (CORE trades + coherent raw probabilities):")
+    print("  Period                 | Slice   | Trades | Win    | P&L     | Sharpe | Brier  | LogLoss")
+    for period in summary["regime_report"]:
+        date_range = f"{period['start']}..{period['end']}"
+        print(f"  {period['label']} ({date_range})")
+        for slice_name in ["overall", "central", "wing"]:
+            item = period[slice_name]
+            print(
+                f"    {'':19} | {slice_name:7} | {item['trades']:>6} | {item['win_rate']:>6.1%} | "
+                f"${item['net_pnl']:>7.2f} | {item['sharpe']:>6.2f} | {item['brier_score']:>6.4f} | {item['log_loss']:>7.4f}"
+            )
     wf = summary["walk_forward"]
     print("\nWALK-FORWARD VALIDATION:")
     print(f"  Method: {wf['method']}")
@@ -1297,6 +1413,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
     walk_forward = walk_forward_validation(engine)
     bakeoff = threshold_bakeoff(engine)
     prob_eval = probability_evaluation(engine)
+    regimes = regime_report(engine, trades)
     learned_trades = engine.run(
         BacktestConfig(
             gap_threshold=DEFAULT_CORE_GAP_PP,
@@ -1337,6 +1454,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
             "inverse_mae_weights": summarize_trades(learned_core),
         },
         "probability_evaluation": prob_eval,
+        "regime_report": regimes,
         "settlement_audit": audit,
         "settlement_mismatches": audit["trade_rows_iem_vs_kalshi_mismatch"],
         "fill_stress": fill_stress,
