@@ -1,0 +1,275 @@
+{
+  "commands_run": [
+    "sed -n '1,420p' CLAUDE.md",
+    "shasum -a 256 -c release_assets/SHA256SUMS.txt",
+    "cat release_assets/john-becker-kalshi-dataset.tar.zst.part-* > release_assets/john-becker-kalshi-dataset.tar.zst && zstd -t release_assets/john-becker-kalshi-dataset.tar.zst",
+    "zstd -dc release_assets/john-becker-kalshi-dataset.tar.zst | tar -xf -",
+    ".venv/bin/python research/becker_inventory.py"
+  ],
+  "folders": {
+    "markets": {
+      "duckdb_summary": {
+        "duplicate_ticker_fetched_at_count": 0,
+        "max_close_time": "2099-07-31 23:59:00-05:00",
+        "max_created_time": "2025-11-23 13:51:48.656951-05:00",
+        "max_fetched_at": "2025-11-24 02:40:25.762553",
+        "max_open_time": "2026-11-30 10:00:00-05:00",
+        "min_close_time": "2021-07-01 19:00:00-04:00",
+        "min_created_time": "2021-06-30 09:46:45.154903-04:00",
+        "min_fetched_at": "2025-11-23 18:51:48.805101",
+        "min_open_time": "2021-06-30 10:00:00-04:00",
+        "row_count": 7682445,
+        "unique_event_tickers": 1197300,
+        "unique_tickers": 7682445
+      },
+      "file_metadata": {
+        "corrupt_file_count": 0,
+        "corrupt_files": [],
+        "file_count": 769,
+        "file_rows_sample": [
+          {
+            "path": "data/kalshi/markets/markets_0_10000.parquet",
+            "rows": 10000,
+            "size_bytes": 1340354
+          },
+          {
+            "path": "data/kalshi/markets/markets_1000000_1010000.parquet",
+            "rows": 10000,
+            "size_bytes": 1540453
+          },
+          {
+            "path": "data/kalshi/markets/markets_100000_110000.parquet",
+            "rows": 10000,
+            "size_bytes": 1402991
+          },
+          {
+            "path": "data/kalshi/markets/markets_10000_20000.parquet",
+            "rows": 10000,
+            "size_bytes": 1514467
+          },
+          {
+            "path": "data/kalshi/markets/markets_1010000_1020000.parquet",
+            "rows": 10000,
+            "size_bytes": 1532917
+          }
+        ],
+        "folder": "markets",
+        "row_count_from_metadata": 7682445,
+        "schema_variant_count": 1,
+        "schema_variants": [
+          {
+            "columns": [
+              {
+                "name": "ticker",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "event_ticker",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "market_type",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "title",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "yes_sub_title",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "no_sub_title",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "status",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "yes_bid",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "yes_ask",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "no_bid",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "no_ask",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "last_price",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "volume",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "volume_24h",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "open_interest",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "result",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "created_time",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "open_time",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "close_time",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "_fetched_at",
+                "physical_type": "INT64"
+              }
+            ],
+            "example_file": "data/kalshi/markets/markets_0_10000.parquet",
+            "file_count": 769,
+            "variant_id": 1
+          }
+        ],
+        "size_bytes": 596291689,
+        "size_human": "568.7MB",
+        "valid_file_count": 769
+      },
+      "range_continuity": {
+        "gap_count": 0,
+        "gaps_sample": [],
+        "max_end": 7690000,
+        "min_start": 0,
+        "overlap_count": 0,
+        "overlaps_sample": [],
+        "range_file_count": 769
+      }
+    },
+    "trades": {
+      "duckdb_summary": {
+        "duplicate_trade_id_count": 0,
+        "max_created_time": "2025-11-25 17:00:15.194245-05:00",
+        "max_fetched_at": "2025-11-25 22:12:35.797636",
+        "min_created_time": "2021-06-30 16:09:14.185137-04:00",
+        "min_fetched_at": "2025-11-25 01:20:41.474248",
+        "row_count": 72134741,
+        "unique_tickers": 586025,
+        "unique_trade_ids": 72134741
+      },
+      "file_metadata": {
+        "corrupt_file_count": 0,
+        "corrupt_files": [],
+        "file_count": 7214,
+        "file_rows_sample": [
+          {
+            "path": "data/kalshi/trades/trades_0_10000.parquet",
+            "rows": 10000,
+            "size_bytes": 488607
+          },
+          {
+            "path": "data/kalshi/trades/trades_10000000_10010000.parquet",
+            "rows": 10000,
+            "size_bytes": 500650
+          },
+          {
+            "path": "data/kalshi/trades/trades_1000000_1010000.parquet",
+            "rows": 10000,
+            "size_bytes": 490307
+          },
+          {
+            "path": "data/kalshi/trades/trades_100000_110000.parquet",
+            "rows": 10000,
+            "size_bytes": 464759
+          },
+          {
+            "path": "data/kalshi/trades/trades_10000_20000.parquet",
+            "rows": 10000,
+            "size_bytes": 493722
+          }
+        ],
+        "folder": "trades",
+        "row_count_from_metadata": 72134741,
+        "schema_variant_count": 1,
+        "schema_variants": [
+          {
+            "columns": [
+              {
+                "name": "trade_id",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "ticker",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "count",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "yes_price",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "no_price",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "taker_side",
+                "physical_type": "BYTE_ARRAY"
+              },
+              {
+                "name": "created_time",
+                "physical_type": "INT64"
+              },
+              {
+                "name": "_fetched_at",
+                "physical_type": "INT64"
+              }
+            ],
+            "example_file": "data/kalshi/trades/trades_0_10000.parquet",
+            "file_count": 7214,
+            "variant_id": 1
+          }
+        ],
+        "size_bytes": 3564871299,
+        "size_human": "3.3GB",
+        "valid_file_count": 7214
+      },
+      "range_continuity": {
+        "gap_count": 0,
+        "gaps_sample": [],
+        "max_end": 72140000,
+        "min_start": 0,
+        "overlap_count": 0,
+        "overlaps_sample": [],
+        "range_file_count": 7214
+      }
+    }
+  },
+  "generated_at_utc": "2026-04-26T05:12:53.315028+00:00",
+  "top_level": {
+    "data_root": "data/kalshi",
+    "exists": true,
+    "top_level_directories": [
+      "markets",
+      "trades"
+    ],
+    "total_parquet_count": 7983,
+    "total_size_bytes": 4161162988,
+    "total_size_human": "3.9GB"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "folders": {
+    "markets": {
+      "corrupt_files": [],
+      "schema_variant_count": 1,
+      "schema_variants": [
+        {
+          "columns": [
+            {
+              "name": "ticker",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "event_ticker",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "market_type",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "title",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "yes_sub_title",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "no_sub_title",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "status",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "yes_bid",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "yes_ask",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "no_bid",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "no_ask",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "last_price",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "volume",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "volume_24h",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "open_interest",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "result",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "created_time",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "open_time",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "close_time",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "_fetched_at",
+              "physical_type": "INT64"
+            }
+          ],
+          "example_file": "data/kalshi/markets/markets_0_10000.parquet",
+          "file_count": 769,
+          "variant_id": 1
+        }
+      ]
+    },
+    "trades": {
+      "corrupt_files": [],
+      "schema_variant_count": 1,
+      "schema_variants": [
+        {
+          "columns": [
+            {
+              "name": "trade_id",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "ticker",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "count",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "yes_price",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "no_price",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "taker_side",
+              "physical_type": "BYTE_ARRAY"
+            },
+            {
+              "name": "created_time",
+              "physical_type": "INT64"
+            },
+            {
+              "name": "_fetched_at",
+              "physical_type": "INT64"
+            }
+          ],
+          "example_file": "data/kalshi/trades/trades_0_10000.parquet",
+          "file_count": 7214,
+          "variant_id": 1
+        }
+      ]
+    }
+  },
+  "generated_at_utc": "2026-04-26T05:12:53.315028+00:00"
+}

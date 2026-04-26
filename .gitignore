@@ -25,6 +25,7 @@ wheels/
 .backfill_cursor
 data
 data.zip
+release_assets/
 
 research/*
 !research/main.tex
@@ -32,6 +33,9 @@ research/*
 !research/fig
 !research/analysis
 !research/sections
+!research/*.py
+!research/sql/
+!research/sql/**
 
 scratchpad
 

@@ -191,6 +191,35 @@ Interpretation: good research baseline, not proof of durable edge. Current resea
 
 ---
 
+## Becker Dataset Research Inventory
+
+The John Becker Kalshi parquet dataset is stored locally under `data/kalshi` and uploaded externally as the GitHub release `john-becker-kalshi-dataset-v1`; it is not committed to Git. Local release chunks live in `release_assets/`, which is ignored to avoid committing multi-GB archive parts.
+
+Phase 1 inventory is reproducible with:
+
+```bash
+shasum -a 256 -c release_assets/SHA256SUMS.txt
+cat release_assets/john-becker-kalshi-dataset.tar.zst.part-* > release_assets/john-becker-kalshi-dataset.tar.zst
+zstd -t release_assets/john-becker-kalshi-dataset.tar.zst
+zstd -dc release_assets/john-becker-kalshi-dataset.tar.zst | tar -xf -
+.venv/bin/python research/becker_inventory.py
+```
+
+Generated outputs:
+- `data/research/becker_inventory.json`
+- `data/research/becker_schema_summary.json`
+- `reports/becker_dataset_inventory.md`
+
+Latest Phase 1 inventory:
+- Total parquet files: 7,983; corrupt shards: 0; schema variants: 1 for trades and 1 for markets.
+- Trades: 7,214 files, 72,134,741 rows, 3.3GB, 586,025 unique tickers, 72,134,741 unique trade IDs, 0 duplicate trade ID groups, created time range 2021-06-30 16:09:14.185137-04:00 to 2025-11-25 17:00:15.194245-05:00.
+- Markets: 769 files, 7,682,445 rows, 568.7MB, 7,682,445 unique tickers, 1,197,300 unique event tickers, 0 duplicate ticker + `_fetched_at` groups, created time range 2021-06-30 09:46:45.154903-04:00 to 2025-11-23 13:51:48.656951-05:00.
+- Range continuity: 0 gaps and 0 overlaps in both `trades_*` and `markets_*` shard ranges.
+
+This inventory is research-only. It does not alter live pipeline behavior, thresholds, paper trading, LaunchAgent, or order execution.
+
+---
+
 ## Strategy Sleeves
 
 Core signals use HGEFS/Gumbel/tiered gates and require the canonical 20pp edge floor from `config.MIN_GAP_PP`.
