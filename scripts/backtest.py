@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import math
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -25,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config
+from execution.fill_model import simulate_fill, stress_test_fills
 from models.distributional_temp import DistributionalTempModel
 
 DATA_DIR = ROOT / "data"
@@ -88,6 +91,11 @@ ENTRY_TIMES = {
     "1PM": dtime(13, 0),
     "3PM": dtime(15, 0),
 }
+
+VINTAGE_FILTER_NOTE = (
+    "Open-Meteo historical cache has daily values without cycle_init_utc; "
+    "true forecast-vintage filtering cannot drop rows yet."
+)
 
 
 def log(message: str) -> None:
@@ -660,11 +668,13 @@ class BacktestEngine:
             df = df[df["target_date"] >= cfg.start_date]
         if cfg.end_date:
             df = df[df["target_date"] <= cfg.end_date]
-        for _, row in df.iterrows():
-            gfs = float(row["gfs_maxt"])
-            ecmwf = float(row["ecmwf_maxt"])
-            ukmo = float(row["ukmo_maxt"])
-            nbm = float(row["nbm_maxt"])
+        dist_model = DistributionalTempModel()
+        for _, day_group in df.groupby("target_date", sort=True):
+            first = day_group.iloc[0]
+            gfs = float(first["gfs_maxt"])
+            ecmwf = float(first["ecmwf_maxt"])
+            ukmo = float(first["ukmo_maxt"])
+            nbm = float(first["nbm_maxt"])
             physics_models = np.array([gfs, ecmwf], dtype=float)
             ai_models = np.array([ukmo, nbm], dtype=float)
             physics_mean = float(np.mean(physics_models))
@@ -677,122 +687,138 @@ class BacktestEngine:
                 + weights["ukmo"] * ukmo
                 + weights["nbm"] * nbm
             )
-            lo = None if pd.isna(row["floor_strike"]) else float(row["floor_strike"])
-            hi = None if pd.isna(row["cap_strike"]) else float(row["cap_strike"])
-            btype = str(row["bracket_type"])
-            p_yes = gumbel_prob(lo, hi, btype, consensus)
-            market_price = float(row[entry_col])
-            gap_pp = (p_yes - market_price) * 100.0
-            gap_abs = abs(gap_pp)
-            gate1 = physics_spread < 3.0 and ai_spread < 3.0 and abs(physics_mean - ai_mean) < 2.5
-            gate2 = gap_abs > cfg.gap_threshold and not (35.0 <= gap_abs <= 40.0)
-            gate3 = 0.25 <= market_price <= 0.75
-            actual_temp = float(row["max_temp_f"]) if not pd.isna(row.get("max_temp_f")) else np.nan
-            kalshi_settlement_temp = (
-                float(row["kalshi_settlement_temp"]) if not pd.isna(row.get("kalshi_settlement_temp")) else np.nan
-            )
-            bracket_yes = bool(row["kalshi_result_yes"])
-            reconstructed_yes = (
-                resolved_yes(actual_temp, lo, hi, btype) if np.isfinite(actual_temp) else None
-            )
-            settlement_mismatch = (
-                reconstructed_yes is not None
-                and bool(reconstructed_yes) != bracket_yes
-            )
+            brackets = [
+                {
+                    "ticker": row["ticker"],
+                    "lo_f": None if pd.isna(row["floor_strike"]) else float(row["floor_strike"]),
+                    "hi_f": None if pd.isna(row["cap_strike"]) else float(row["cap_strike"]),
+                    "bracket_type": row["bracket_type"],
+                }
+                for _, row in day_group.iterrows()
+            ]
+            coherent_probs = dist_model.bracket_probabilities(consensus, brackets)
+            prob_mass = sum(coherent_probs.values())
+            assert abs(prob_mass - 1.0) < 0.001, f"Bracket probs sum to {prob_mass}, not 1.0"
 
-            if gate1 and gate2 and gate3:
-                direction = "YES" if gap_pp > 0 else "NO"
-                entry_price = market_price if direction == "YES" else 1.0 - market_price
-                confidence = self._confidence_score(
+            for _, row in day_group.iterrows():
+                lo = None if pd.isna(row["floor_strike"]) else float(row["floor_strike"])
+                hi = None if pd.isna(row["cap_strike"]) else float(row["cap_strike"])
+                btype = str(row["bracket_type"])
+                p_yes = float(coherent_probs.get(row["ticker"], np.nan))
+                if not np.isfinite(p_yes):
+                    continue
+                market_price = float(row[entry_col])
+                gap_pp = (p_yes - market_price) * 100.0
+                gap_abs = abs(gap_pp)
+                gate1 = physics_spread < 3.0 and ai_spread < 3.0 and abs(physics_mean - ai_mean) < 2.5
+                gate2 = gap_abs > cfg.gap_threshold and not (35.0 <= gap_abs <= 40.0)
+                gate3 = 0.25 <= market_price <= 0.75
+                actual_temp = float(row["max_temp_f"]) if not pd.isna(row.get("max_temp_f")) else np.nan
+                kalshi_settlement_temp = (
+                    float(row["kalshi_settlement_temp"]) if not pd.isna(row.get("kalshi_settlement_temp")) else np.nan
+                )
+                bracket_yes = bool(row["kalshi_result_yes"])
+                reconstructed_yes = (
+                    resolved_yes(actual_temp, lo, hi, btype) if np.isfinite(actual_temp) else None
+                )
+                settlement_mismatch = (
+                    reconstructed_yes is not None
+                    and bool(reconstructed_yes) != bracket_yes
+                )
+
+                if gate1 and gate2 and gate3:
+                    direction = "YES" if gap_pp > 0 else "NO"
+                    entry_price = market_price if direction == "YES" else 1.0 - market_price
+                    confidence = self._confidence_score(
+                        gap_abs,
+                        entry_price,
+                        physics_spread,
+                        ai_spread,
+                        abs(physics_mean - ai_mean),
+                        btype,
+                    )
+                    self._append_trade(
+                        rows,
+                        row,
+                        "CORE",
+                        direction,
+                        entry_price,
+                        cfg.entry_timing,
+                        confidence,
+                        gap_pp,
+                        p_yes,
+                        bracket_yes,
+                        reconstructed_yes,
+                        settlement_mismatch,
+                        actual_temp,
+                        kalshi_settlement_temp,
+                        consensus,
+                        physics_mean,
+                        physics_spread,
+                        ai_mean,
+                        ai_spread,
+                        weights,
+                        cfg.label,
+                    )
+
+                yes_bid_proxy = max(0.0, market_price - 0.02)
+                no_entry = min(1.0, max(0.0, 1.0 - yes_bid_proxy))
+                sleeve_confidence = self._confidence_score(
                     gap_abs,
-                    entry_price,
+                    no_entry,
                     physics_spread,
                     ai_spread,
                     abs(physics_mean - ai_mean),
                     btype,
                 )
-                self._append_trade(
-                    rows,
-                    row,
-                    "CORE",
-                    direction,
-                    entry_price,
-                    cfg.entry_timing,
-                    confidence,
-                    gap_pp,
-                    p_yes,
-                    bracket_yes,
-                    reconstructed_yes,
-                    settlement_mismatch,
-                    actual_temp,
-                    kalshi_settlement_temp,
-                    consensus,
-                    physics_mean,
-                    physics_spread,
-                    ai_mean,
-                    ai_spread,
-                    weights,
-                    cfg.label,
-                )
-
-            yes_bid_proxy = max(0.0, market_price - 0.02)
-            no_entry = min(1.0, max(0.0, 1.0 - yes_bid_proxy))
-            sleeve_confidence = self._confidence_score(
-                gap_abs,
-                no_entry,
-                physics_spread,
-                ai_spread,
-                abs(physics_mean - ai_mean),
-                btype,
-            )
-            if p_yes < TAIL_NO_PROB_MAX and market_price > TAIL_NO_YES_PRICE_MIN:
-                self._append_trade(
-                    rows,
-                    row,
-                    "TAIL_NO",
-                    "NO",
-                    no_entry,
-                    cfg.entry_timing,
-                    sleeve_confidence,
-                    gap_pp,
-                    p_yes,
-                    bracket_yes,
-                    reconstructed_yes,
-                    settlement_mismatch,
-                    actual_temp,
-                    kalshi_settlement_temp,
-                    consensus,
-                    physics_mean,
-                    physics_spread,
-                    ai_mean,
-                    ai_spread,
-                    weights,
-                    cfg.label,
-                )
-            if p_yes < DEEP_TAIL_NO_PROB_MAX and market_price > DEEP_TAIL_NO_YES_PRICE_MIN:
-                self._append_trade(
-                    rows,
-                    row,
-                    "DEEP_TAIL_NO",
-                    "NO",
-                    no_entry,
-                    cfg.entry_timing,
-                    sleeve_confidence,
-                    gap_pp,
-                    p_yes,
-                    bracket_yes,
-                    reconstructed_yes,
-                    settlement_mismatch,
-                    actual_temp,
-                    kalshi_settlement_temp,
-                    consensus,
-                    physics_mean,
-                    physics_spread,
-                    ai_mean,
-                    ai_spread,
-                    weights,
-                    cfg.label,
-                )
+                if p_yes < TAIL_NO_PROB_MAX and market_price > TAIL_NO_YES_PRICE_MIN:
+                    self._append_trade(
+                        rows,
+                        row,
+                        "TAIL_NO",
+                        "NO",
+                        no_entry,
+                        cfg.entry_timing,
+                        sleeve_confidence,
+                        gap_pp,
+                        p_yes,
+                        bracket_yes,
+                        reconstructed_yes,
+                        settlement_mismatch,
+                        actual_temp,
+                        kalshi_settlement_temp,
+                        consensus,
+                        physics_mean,
+                        physics_spread,
+                        ai_mean,
+                        ai_spread,
+                        weights,
+                        cfg.label,
+                    )
+                if p_yes < DEEP_TAIL_NO_PROB_MAX and market_price > DEEP_TAIL_NO_YES_PRICE_MIN:
+                    self._append_trade(
+                        rows,
+                        row,
+                        "DEEP_TAIL_NO",
+                        "NO",
+                        no_entry,
+                        cfg.entry_timing,
+                        sleeve_confidence,
+                        gap_pp,
+                        p_yes,
+                        bracket_yes,
+                        reconstructed_yes,
+                        settlement_mismatch,
+                        actual_temp,
+                        kalshi_settlement_temp,
+                        consensus,
+                        physics_mean,
+                        physics_spread,
+                        ai_mean,
+                        ai_spread,
+                        weights,
+                        cfg.label,
+                    )
         return pd.DataFrame(rows)
 
     @staticmethod
@@ -1018,6 +1044,106 @@ def stress_fill_realism(trades: pd.DataFrame) -> dict:
         "extra_5c_entry_cost": summarize_trades(with_extra_cost(0.05)),
         "miss_best_10pct_plus_3c": summarize_trades(with_extra_cost(0.03, missed_best)),
         "note": "Stress tests worsen DEEP_TAIL_NO entry cost and simulate missing the highest-edge 10% of fills.",
+    }
+
+
+def _fill_bracket_type(value: Any) -> str:
+    text = str(value)
+    if text == "central":
+        return "central"
+    if text == "wing_low":
+        return "lower_tail"
+    if text == "wing_high":
+        return "upper_tail"
+    return text
+
+
+def apply_fill_scenario(trades: pd.DataFrame, scenario: str) -> pd.DataFrame:
+    """Return a copy of trades with `net` recomputed for a fill scenario."""
+    if trades.empty:
+        return trades.copy()
+    out = trades.copy()
+    out["contracts"] = 1
+    if scenario == "optimistic":
+        out["fill_scenario"] = "optimistic"
+        return out
+
+    fill_prices = []
+    fees = []
+    fill_probs = []
+    for _, row in out.iterrows():
+        fill = simulate_fill(
+            float(row["entry_price"]),
+            _fill_bracket_type(row["bracket_type"]),
+            str(row["direction"]),
+            "maker",
+            contracts=1,
+        )
+        fill_prices.append(fill["fill_price"])
+        fees.append(fill["fee"])
+        fill_probs.append(fill["fill_probability"])
+    out["entry_price"] = fill_prices
+    out["fee"] = fees
+    out["fill_probability"] = fill_probs
+    out["gross"] = np.where(out["win"], 1.0 - out["entry_price"], -out["entry_price"])
+    out["net"] = out["gross"] - out["fee"]
+    out["fill_scenario"] = "realistic_maker"
+
+    if scenario == "stress_3c":
+        stress_input = out.rename(columns={"net": "net_pnl"})
+        stressed = stress_test_fills(stress_input, extra_cents=3.0)
+        out["entry_price"] = stressed["entry_price_stressed"]
+        out["net"] = stressed["net_pnl_stressed"]
+        out["gross"] = out["net"] + out["fee"]
+        out["fill_scenario"] = "stress_plus_3c"
+    return out
+
+
+def fill_scenario_summary(trades: pd.DataFrame) -> dict:
+    scenarios = {
+        "optimistic": apply_fill_scenario(trades, "optimistic"),
+        "realistic": apply_fill_scenario(trades, "realistic"),
+        "stress_plus_3c": apply_fill_scenario(trades, "stress_3c"),
+    }
+    return {
+        name: {
+            "overall": summarize_trades(frame),
+            "by_sleeve": {
+                sleeve: summarize_trades(frame[frame["sleeve"] == sleeve])
+                for sleeve in ["CORE", "TAIL_NO", "DEEP_TAIL_NO"]
+            },
+        }
+        for name, frame in scenarios.items()
+    }
+
+
+def vintage_filter_summary(engine: BacktestEngine) -> dict:
+    return {
+        "rows_dropped_due_to_vintage_violations": 0,
+        "rows_checked": int(len(engine.dataset)),
+        "status": "not_enforced_daily_cache_no_cycle_timestamps",
+        "note": VINTAGE_FILTER_NOTE,
+    }
+
+
+def reproducibility_footer(trades: pd.DataFrame) -> dict:
+    try:
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=ROOT,
+        ).decode().strip()
+    except Exception:
+        git_sha = "unknown"
+    cfg_hash = hashlib.md5((ROOT / "config.py").read_bytes()).hexdigest()[:8]
+    return {
+        "generated_at": datetime.now().strftime("%Y%m%d_%H%M"),
+        "git_sha": git_sha,
+        "config_hash": cfg_hash,
+        "run_id": f"{datetime.now():%Y%m%d_%H%M}_{git_sha}_{cfg_hash}",
+        "rows": int(len(trades)),
+        "date_min": str(trades["date"].min()) if not trades.empty else None,
+        "date_max": str(trades["date"].max()) if not trades.empty else None,
     }
 
 
@@ -1269,6 +1395,11 @@ def print_summary(summary: dict) -> None:
     print("  Settlement/P&L source: Kalshi market result field")
     print("  IEM KNYC temperatures: diagnostics/model-error analysis only")
     print("  Forecast vintage warning: Open-Meteo file has one daily row, so timing tests reuse same forecast values")
+    print(
+        "  Rows dropped due to vintage violations: "
+        f"{summary['vintage_filter']['rows_dropped_due_to_vintage_violations']} "
+        f"({summary['vintage_filter']['status']})"
+    )
     print(f"  Baseline run: gap > {summary['baseline']['gap_threshold_pp']}pp, entry {summary['baseline']['entry_timing']}")
     print(f"  Model weights traded: {summary['baseline']['ensemble_weights']}")
     print(f"  TAIL_NO rule: P_yes < {TAIL_NO_PROB_MAX:.2f} and YES price > {TAIL_NO_YES_PRICE_MIN:.2f}")
@@ -1354,6 +1485,11 @@ def print_summary(summary: dict) -> None:
             f"  {name}: Brier {item['brier_score']:.4f}, log loss {item['log_loss']:.4f}, "
             f"mass avg {item['prob_mass_check']:.4f}"
         )
+    mass = prob_eval["coherent_raw_all"]
+    print(
+        f"  Bracket probability mass check: avg {mass['prob_mass_check']:.4f}, "
+        f"min {mass['prob_mass_min']:.4f}, max {mass['prob_mass_max']:.4f}"
+    )
     print("  Central vs wing (coherent calibrated holdout):")
     for group, item in prob_eval["coherent_calibrated_holdout"]["central_vs_wing"].items():
         print(f"    {group}: rows {item['rows']}, Brier {item['brier_score']:.4f}, log loss {item['log_loss']:.4f}")
@@ -1382,6 +1518,23 @@ def print_summary(summary: dict) -> None:
         if not isinstance(item, dict):
             continue
         print(f"  {name}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
+    print("\nTHREE-TIER FILL P&L:")
+    print("  Scenario      | Win Rate | Net P&L | Sharpe")
+    for scenario, item in summary["fill_scenarios"].items():
+        overall = item["overall"]
+        print(
+            f"  {scenario:13} | {overall['win_rate']:>8.1%} | "
+            f"${overall['net_pnl']:>7.2f} | {overall['sharpe']:>6.2f}"
+        )
+    print("\nSLEEVE COMPARISON BY FILL SCENARIO:")
+    print("  Scenario      | Sleeve       | Trades | Win    | Net P&L | Sharpe")
+    for scenario, item in summary["fill_scenarios"].items():
+        for sleeve, sleeve_item in item["by_sleeve"].items():
+            print(
+                f"  {scenario:13} | {sleeve:12} | {sleeve_item['trades']:>6} | "
+                f"{sleeve_item['win_rate']:>6.1%} | ${sleeve_item['net_pnl']:>7.2f} | "
+                f"{sleeve_item['sharpe']:>6.2f}"
+            )
     print("\nSETTLEMENT CROSS-CHECK:")
     audit = summary["settlement_audit"]
     print(f"  P&L source: {audit['pnl_source']}")
@@ -1391,6 +1544,9 @@ def print_summary(summary: dict) -> None:
     print(f"  Trade-level IEM/Kalshi mismatches: {audit['trade_rows_iem_vs_kalshi_mismatch']}")
     print(f"\nSaved full trade-by-trade results to {RESULTS_CSV}")
     print(f"Saved summary to {SUMMARY_JSON}")
+    footer = summary["run"]
+    print(f"\nRun ID: {footer['run_id']}")
+    print(f"Data: {footer['rows']} rows, {footer['date_min']} to {footer['date_max']}")
 
 
 def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
@@ -1410,6 +1566,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
     }
     audit = settlement_audit(engine, trades)
     fill_stress = {"DEEP_TAIL_NO": stress_fill_realism(trades)}
+    fills = fill_scenario_summary(trades)
     walk_forward = walk_forward_validation(engine)
     bakeoff = threshold_bakeoff(engine)
     prob_eval = probability_evaluation(engine)
@@ -1436,7 +1593,9 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
             "P&L is settled from Kalshi market result, not reconstructed IEM temperature.",
             "Open-Meteo historical dataset is daily-only; entry timing tests reuse the same model forecast values and vary market price only.",
             "Inverse-MAE weights are reported and compared, but fixed strategy weights remain the baseline unless explicitly selected.",
+            "Fill scenarios are research-only and do not modify live execution.",
         ],
+        "vintage_filter": vintage_filter_summary(engine),
         "total_days_analyzed": int(engine.dataset.dropna(subset=["kalshi_result_yes", *MODEL_COLUMNS.values()])["target_date"].nunique()),
         "trading_days": int(core["date"].nunique()) if not core.empty else 0,
         "core": summarize_trades(core),
@@ -1458,7 +1617,9 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
         "settlement_audit": audit,
         "settlement_mismatches": audit["trade_rows_iem_vs_kalshi_mismatch"],
         "fill_stress": fill_stress,
+        "fill_scenarios": fills,
         "walk_forward": walk_forward,
+        "run": reproducibility_footer(trades),
         "optimal": {
             "best_gap_threshold_pp": int(best_gap_key.split("_")[-1].replace("pp", "")),
             "best_entry_timing": best_timing,

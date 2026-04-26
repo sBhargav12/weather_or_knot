@@ -176,16 +176,24 @@ Current methodology:
 - `features/bracket_targets.py` builds one row per date/bracket with consensus temperature, spread, bracket-edge distances, wing/central flags, prior-day error, hours to close, regime flags, market price, and gap.
 - The bracket-coherent model has optional isotonic calibration for research. Calibrated probabilities are renormalized across each daily bracket set so total mass remains 1.0. Backtest output compares old independent probabilities vs coherent raw vs coherent calibrated probabilities using Brier score, log loss, mass checks, and central-vs-wing breakdowns.
 - Backtest regime reporting segments core-trade economics and coherent raw probability quality by upstream model eras: `pre_HGEFS`, `HGEFS_to_AIFS`, `AIFS_to_NBM_v43`, `NBM_v43_to_AIFS_ENS`, `AIFS_ENS_to_NBM_v50`, and `NBM_v50_on`. Each period prints overall, central-only, and wing-only trades, win rate, net P&L, Sharpe, Brier score, and log loss. This is research-only and does not change live thresholds or execution.
+- `execution/fill_model.py` is a research-only fill/slippage module used by the backtest. It models optimistic, realistic maker, and stress +3¢ scenarios with bracket-family half-spreads and ceiling-rounded Kalshi maker/taker fees. It is not wired into live execution.
+- The backtest simulation loop now uses the bracket-coherent probability map and asserts each day's bracket probabilities sum to 1.0. The legacy independent Gumbel calculation remains in probability evaluation for honest old-vs-coherent comparison.
+- Forecast vintage tracking remains a guardrail, not full historical truth: cached Open-Meteo rows still lack `cycle_init_utc`, so backtest output reports `0` vintage rows dropped with an explicit `not_enforced_daily_cache_no_cycle_timestamps` warning.
+- Every backtest summary includes a run footer with git SHA, `config.py` hash, row count, and date range.
 
-Latest cached backtest output after the research-hardening pass:
-- Core baseline at 20pp is recalculated by `scripts/backtest.py`; do not treat 20pp as final strategy truth until threshold bakeoff results are reviewed.
-- Walk-forward inverse-MAE core: 273 trades, 62.3% win rate, +$27.70 net.
-- Global inverse-MAE comparison: 325 trades, 64.9% win rate, +$41.92 net. Treat this as retrospective fit, not proof.
-- Settlement audit: 3426/3426 market rows have Kalshi result labels; 60 market-level IEM/Kalshi mismatches; 5 trade-level mismatches.
-- `DEEP_TAIL_NO` baseline: 492 trades, 94.1% win rate, +$46.29 net.
-- `DEEP_TAIL_NO` stress tests: +3¢ worse fills still +$31.89; +5¢ worse fills still +$23.42; missing best 10% plus +3¢ still +$22.55.
+Latest cached backtest output after adding coherent-probability simulation and research fill scenarios (`run_id=20260426_1027_d61ce7a_cb05d47a`, local CSVs, `--skip-fetch`):
+- Vintage rows dropped: 0, because true run-cycle timestamps are unavailable in the daily Open-Meteo cache.
+- Bracket probability mass check: coherent raw probabilities average/min/max all 1.0000.
+- Core baseline at 20pp/9AM: 460 trades, 57.6% win rate, +$17.38 net, Sharpe 0.08, max drawdown -$17.04.
+- Threshold bakeoff: 20pp core +$17.38 with walk-forward +$20.21; 25pp core +$19.08 with walk-forward +$18.30; 30pp core +$15.38 with walk-forward +$15.10. Keep live 20pp frozen; this is research only.
+- Walk-forward inverse-MAE core: 378 trades, 59.3% win rate, +$20.21 net.
+- Global inverse-MAE comparison: 443 trades, 62.3% win rate, +$36.63 net. Treat this as retrospective fit, not proof.
+- Settlement audit: 3426/3426 market rows have Kalshi result labels; 60 market-level IEM/Kalshi mismatches; 51 trade-level mismatches under the current coherent simulation.
+- `DEEP_TAIL_NO` baseline: 513 trades, 89.7% win rate, +$31.86 net.
+- `DEEP_TAIL_NO` direct stress tests: +3¢ worse fills still +$16.83; +5¢ worse fills still +$7.97; missing best 10% plus +3¢ still +$19.14.
+- Three-tier fill scenario table across all sleeves: optimistic +$58.19, realistic maker +$65.27, stress +3¢ +$2.45. By sleeve under +3¢ stress: CORE -$5.62, TAIL_NO +$5.06, DEEP_TAIL_NO +$3.01. This is a warning that core and deep-tail economics are execution-sensitive.
 - Probability evaluation holdout: old and coherent raw both Brier 0.1354 / log loss 0.4401 / mass 1.0000; coherent calibrated improves to Brier 0.1131 / log loss 0.3489 / mass 1.0000. Calibrated holdout is much stronger on wings (Brier 0.0387) than central brackets (Brier 0.1503), so future calibration may need central-vs-wing separation.
-- Regime report from the same cached run: `pre_HGEFS` was strongest overall (47 core trades, 80.9% win rate, +$12.79, Brier 0.0992); the long `AIFS_ENS_to_NBM_v50` period was much weaker economically (220 trades, 56.4%, +$4.74, Brier 0.1361). Central brackets remain materially harder than wings in every sufficiently populated era: central log loss was 0.4276/0.6818/0.4976/0.6675/0.5788/0.4330 across periods, while wing log loss was 0.0467/0.1966/0.1034/0.2309/0.1810/0.1357. The `NBM_v50_on` slice has only 8 core trades, so treat it as a smoke signal, not evidence.
+- Regime report from the same cached run: `pre_HGEFS` was strongest overall (47 core trades, 80.9% win rate, +$12.79, Brier 0.0992); the long `AIFS_ENS_to_NBM_v50` period was much weaker economically (220 trades, 56.4%, +$4.74, Brier 0.1361). Central brackets remain materially harder than wings in every sufficiently populated era. The `NBM_v50_on` slice has only 8 core trades, so treat it as a smoke signal, not evidence.
 
 Interpretation: good research baseline, not proof of durable edge. Current research requirement: threshold bakeoff plus true forecast-vintage data by entry time.
 
