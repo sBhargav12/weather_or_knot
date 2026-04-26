@@ -1,23 +1,42 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from data_store.db import Database
 
+NY_TZ = ZoneInfo("America/New_York")
+
+
+def _report_window_utc(report_date: str) -> tuple[str, str]:
+    """Return the UTC created_at window for a New York trading/report date."""
+    start_local = datetime.combine(date.fromisoformat(report_date), time.min, tzinfo=NY_TZ)
+    end_local = start_local + timedelta(days=1)
+    return (
+        start_local.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+        end_local.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def _rows_for_day(db: Database, table: str, report_date: str, extra_where: str = "", params: tuple[Any, ...] = ()) -> list:
+    start_utc, end_utc = _report_window_utc(report_date)
+    where = f"created_at >= ? AND created_at < ?{extra_where}"
+    return db.execute(f"SELECT * FROM {table} WHERE {where}", (start_utc, end_utc, *params))
+
 
 def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
-    report_date = report_date or date.today().isoformat()
+    report_date = report_date or datetime.now(NY_TZ).date().isoformat()
     db = Database(db_path)
 
-    signals = db.execute("SELECT * FROM signals WHERE date(created_at) = date(?)", (report_date,))
-    trades = db.execute("SELECT * FROM paper_trades WHERE date(created_at) = date(?)", (report_date,))
+    signals = _rows_for_day(db, "signals", report_date)
+    trades = _rows_for_day(db, "paper_trades", report_date)
     settled = [row for row in trades if row["exit_time"] is not None]
     pnl = sum(float(row["net_pnl_maker"] or 0) for row in settled)
     wins = sum(1 for row in settled if float(row["net_pnl_maker"] or 0) > 0)
     losses = sum(1 for row in settled if float(row["net_pnl_maker"] or 0) <= 0)
-    dsm_rows = db.execute("SELECT * FROM dsm_reports WHERE date(created_at) = date(?)", (report_date,))
-    cli_rows = db.execute("SELECT * FROM cli_reports WHERE date(created_at) = date(?)", (report_date,))
+    dsm_rows = _rows_for_day(db, "dsm_reports", report_date)
+    cli_rows = _rows_for_day(db, "cli_reports", report_date)
 
     lines = [
         "KALSHI WEATHER PIPELINE - DAILY REPORT",
@@ -46,19 +65,13 @@ def generate_daily_report(db_path: str, report_date: str | None = None) -> str:
 
 
 def print_sleeve_summary(db_path: str, report_date: str | None = None) -> str:
-    report_date = report_date or date.today().isoformat()
+    report_date = report_date or datetime.now(NY_TZ).date().isoformat()
     db = Database(db_path)
 
     lines = ["SIGNAL BREAKDOWN BY SLEEVE"]
     for sleeve in ["CORE_HGEFS_GUMBEL", "TAIL_NO", "DEEP_TAIL_NO", "LADDER"]:
-        sigs = db.execute(
-            "SELECT * FROM signals WHERE strategy_sleeve = ? AND date(created_at) = date(?)",
-            (sleeve, report_date),
-        )
-        trades = db.execute(
-            "SELECT * FROM paper_trades WHERE strategy_sleeve = ? AND date(created_at) = date(?)",
-            (sleeve, report_date),
-        )
+        sigs = _rows_for_day(db, "signals", report_date, " AND strategy_sleeve = ?", (sleeve,))
+        trades = _rows_for_day(db, "paper_trades", report_date, " AND strategy_sleeve = ?", (sleeve,))
         avg_conf = (
             sum(float(s["confidence_score"] or 0) for s in sigs) / len(sigs)
             if sigs else 0.0
@@ -68,9 +81,9 @@ def print_sleeve_summary(db_path: str, report_date: str | None = None) -> str:
 
 
 def print_gate_summary(db_path: str, report_date: str | None = None) -> str:
-    report_date = report_date or date.today().isoformat()
+    report_date = report_date or datetime.now(NY_TZ).date().isoformat()
     db = Database(db_path)
-    rows = db.execute("SELECT * FROM gate_checks WHERE date(created_at) = date(?)", (report_date,))
+    rows = _rows_for_day(db, "gate_checks", report_date)
 
     total = len(rows)
     if total == 0:
@@ -104,12 +117,17 @@ def print_gate_summary(db_path: str, report_date: str | None = None) -> str:
 
 
 def print_model_availability(db_path: str, report_date: str | None = None) -> str:
-    report_date = report_date or date.today().isoformat()
+    report_date = report_date or datetime.now(NY_TZ).date().isoformat()
     db = Database(db_path)
+    start_utc, end_utc = _report_window_utc(report_date)
 
     hgefs = db.execute(
-        "SELECT * FROM model_runs WHERE model = 'HGEFS' AND date(created_at) = date(?) ORDER BY created_at DESC LIMIT 1",
-        (report_date,),
+        """
+        SELECT * FROM model_runs
+        WHERE model = 'HGEFS' AND created_at >= ? AND created_at < ?
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        (start_utc, end_utc),
     )
 
     lines = ["MODEL AVAILABILITY TODAY"]
@@ -129,16 +147,18 @@ def print_model_availability(db_path: str, report_date: str | None = None) -> st
 
     # List models that returned data today
     wethr_models = db.execute(
-        "SELECT DISTINCT model FROM model_runs WHERE model NOT IN ('HGEFS','NBM_BULLETIN','WETHR_CONSENSUS') AND date(created_at) = date(?)",
-        (report_date,),
+        """
+        SELECT DISTINCT model FROM model_runs
+        WHERE model NOT IN ('HGEFS','NBM_BULLETIN','WETHR_CONSENSUS')
+          AND created_at >= ? AND created_at < ?
+        """,
+        (start_utc, end_utc),
     )
     model_list = [r["model"] for r in wethr_models]
     lines.append(f"  Wethr models today: {', '.join(model_list) if model_list else 'none'}")
 
     # Candidate signals summary
-    candidates = db.execute(
-        "SELECT * FROM candidate_signals WHERE date(created_at) = date(?)", (report_date,)
-    )
+    candidates = _rows_for_day(db, "candidate_signals", report_date)
     core_candidates = [c for c in candidates if c["strategy_sleeve"] == "CORE_HGEFS_GUMBEL"]
     passed = sum(1 for c in core_candidates if c["would_pass_core"] == 1)
     lines.append("")

@@ -547,6 +547,8 @@ class BacktestConfig:
     entry_timing: str = DEFAULT_ENTRY_TIMING
     ensemble_weights: Optional[dict[str, float]] = None
     label: str = "fixed_weights"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class BacktestEngine:
@@ -590,8 +592,12 @@ class BacktestEngine:
         df["kalshi_settlement_temp"] = pd.to_numeric(df.get("kalshi_settlement_temp"), errors="coerce")
         return df
 
-    def model_stats(self) -> pd.DataFrame:
+    def model_stats(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         day_df = self.dataset.drop_duplicates("target_date").dropna(subset=["kalshi_settlement_temp"])
+        if start_date:
+            day_df = day_df[day_df["target_date"] >= start_date]
+        if end_date:
+            day_df = day_df[day_df["target_date"] <= end_date]
         rows = []
         for name, col in MODEL_COLUMNS.items():
             valid = day_df.dropna(subset=[col])
@@ -614,6 +620,10 @@ class BacktestEngine:
             "nbm_maxt",
         ]
         df = self.dataset.dropna(subset=required).copy()
+        if cfg.start_date:
+            df = df[df["target_date"] >= cfg.start_date]
+        if cfg.end_date:
+            df = df[df["target_date"] <= cfg.end_date]
         for _, row in df.iterrows():
             gfs = float(row["gfs_maxt"])
             ecmwf = float(row["ecmwf_maxt"])
@@ -897,6 +907,127 @@ def inverse_mae_weights(model_stats: pd.DataFrame) -> dict:
     return {str(row["model"]): float(row["inv_mae"] / total) for _, row in stats.iterrows()}
 
 
+def settlement_audit(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
+    dataset = engine.dataset.copy()
+    usable = dataset.dropna(subset=["kalshi_result_yes"])
+    recon_mask = usable["max_temp_f"].notna()
+    reconstructable = usable[recon_mask].copy()
+    if not reconstructable.empty:
+        reconstructed = []
+        for _, row in reconstructable.iterrows():
+            lo = None if pd.isna(row["floor_strike"]) else float(row["floor_strike"])
+            hi = None if pd.isna(row["cap_strike"]) else float(row["cap_strike"])
+            reconstructed.append(resolved_yes(float(row["max_temp_f"]), lo, hi, str(row["bracket_type"])))
+        reconstructable["reconstructed_result_yes"] = reconstructed
+        market_mismatches = int((reconstructable["reconstructed_result_yes"] != reconstructable["kalshi_result_yes"]).sum())
+    else:
+        market_mismatches = 0
+    return {
+        "pnl_source": "kalshi_result_yes",
+        "temperature_source_for_model_error_only": "IEM NYC max_tmpf",
+        "total_market_rows": int(len(dataset)),
+        "market_rows_with_kalshi_result": int(dataset["kalshi_result_yes"].notna().sum()),
+        "market_rows_with_iem_temp": int(dataset["max_temp_f"].notna().sum()),
+        "market_rows_reconstructable_from_iem": int(len(reconstructable)),
+        "market_rows_iem_vs_kalshi_mismatch": market_mismatches,
+        "trade_rows": int(len(trades)),
+        "trade_rows_iem_vs_kalshi_mismatch": int(trades["settlement_mismatch"].sum()) if not trades.empty else 0,
+        "trade_rows_missing_iem_temp": int(trades["actual_temp"].isna().sum()) if not trades.empty else 0,
+        "audit_note": "Trade win/loss and P&L use Kalshi result labels; IEM reconstruction is diagnostic only.",
+    }
+
+
+def recompute_trade_pnl(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+    out = df.copy()
+    wins = ((out["direction"] == "YES") & out["kalshi_result_yes"]) | (
+        (out["direction"] == "NO") & ~out["kalshi_result_yes"]
+    )
+    out["win"] = wins.astype(bool)
+    out["gross"] = np.where(out["win"], 1.0 - out["entry_price"], -out["entry_price"])
+    out["fee"] = out["entry_price"].apply(kalshi_fee)
+    out["net"] = out["gross"] - out["fee"]
+    return out
+
+
+def stress_fill_realism(trades: pd.DataFrame) -> dict:
+    deep = trades[trades["sleeve"] == "DEEP_TAIL_NO"].copy() if not trades.empty else trades.copy()
+    if deep.empty:
+        empty = summarize_trades(deep)
+        return {
+            "baseline": empty,
+            "extra_1c_entry_cost": empty,
+            "extra_3c_entry_cost": empty,
+            "extra_5c_entry_cost": empty,
+            "miss_best_10pct_plus_3c": empty,
+            "note": "No DEEP_TAIL_NO trades available for stress testing.",
+        }
+
+    def with_extra_cost(extra: float, source: pd.DataFrame = deep) -> pd.DataFrame:
+        stressed = source.copy()
+        stressed["entry_price"] = (stressed["entry_price"] + extra).clip(upper=0.99)
+        return recompute_trade_pnl(stressed)
+
+    # Missed-fill stress: assume the best 10% of model-edge opportunities do not
+    # fill, then apply an additional 3c worse entry to the remaining fills.
+    no_edge = (1.0 - deep["model_prob"]) - deep["entry_price"]
+    cutoff = no_edge.quantile(0.90)
+    missed_best = deep[no_edge < cutoff].copy()
+    return {
+        "baseline": summarize_trades(deep),
+        "extra_1c_entry_cost": summarize_trades(with_extra_cost(0.01)),
+        "extra_3c_entry_cost": summarize_trades(with_extra_cost(0.03)),
+        "extra_5c_entry_cost": summarize_trades(with_extra_cost(0.05)),
+        "miss_best_10pct_plus_3c": summarize_trades(with_extra_cost(0.03, missed_best)),
+        "note": "Stress tests worsen DEEP_TAIL_NO entry cost and simulate missing the highest-edge 10% of fills.",
+    }
+
+
+def walk_forward_validation(engine: BacktestEngine, min_train_months: int = 3) -> dict:
+    months = sorted(engine.dataset["target_date"].dropna().astype(str).str[:7].unique())
+    rows = []
+    all_test_trades = []
+    for index, month in enumerate(months):
+        if index < min_train_months:
+            continue
+        month_start = f"{month}-01"
+        month_end = (pd.Timestamp(month_start) + pd.offsets.MonthEnd(0)).date().isoformat()
+        train_stats = engine.model_stats(end_date=(pd.Timestamp(month_start) - pd.Timedelta(days=1)).date().isoformat())
+        weights = inverse_mae_weights(train_stats)
+        if not weights or set(weights) != set(MODEL_COLUMNS):
+            continue
+        trades = engine.run(
+            BacktestConfig(
+                gap_threshold=DEFAULT_CORE_GAP_PP,
+                entry_timing=DEFAULT_ENTRY_TIMING,
+                ensemble_weights=weights,
+                label="walk_forward_inverse_mae",
+                start_date=month_start,
+                end_date=month_end,
+            )
+        )
+        core = trades[trades["sleeve"] == "CORE"] if not trades.empty else trades
+        summary = summarize_trades(core)
+        rows.append(
+            {
+                "month": month,
+                "train_months": index,
+                "weights": weights,
+                **summary,
+            }
+        )
+        if not core.empty:
+            all_test_trades.append(core)
+    combined = pd.concat(all_test_trades, ignore_index=True) if all_test_trades else pd.DataFrame()
+    return {
+        "method": "expanding-window inverse-MAE weights; train on prior months, test on next month",
+        "min_train_months": min_train_months,
+        "overall": summarize_trades(combined),
+        "months": rows,
+    }
+
+
 def seasonal_multipliers(monthly: dict) -> dict:
     if not monthly:
         return {}
@@ -982,8 +1113,27 @@ def print_summary(summary: dict) -> None:
     print("\nMODEL WEIGHT COMPARISON:")
     for name, item in summary["weight_comparison"].items():
         print(f"  {name}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
+    wf = summary["walk_forward"]
+    print("\nWALK-FORWARD VALIDATION:")
+    print(f"  Method: {wf['method']}")
+    print(
+        f"  Overall: {wf['overall']['trades']} trades, win rate {wf['overall']['win_rate']:.1%}, "
+        f"P&L ${wf['overall']['net_pnl']:.2f}, Sharpe {wf['overall']['sharpe']:.2f}"
+    )
+    for row in wf["months"]:
+        print(f"  {row['month']}: {row['trades']} trades, win rate {row['win_rate']:.1%}, P&L ${row['net_pnl']:.2f}")
+    print("\nDEEP_TAIL_NO FILL STRESS:")
+    for name, item in summary["fill_stress"]["DEEP_TAIL_NO"].items():
+        if not isinstance(item, dict):
+            continue
+        print(f"  {name}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
     print("\nSETTLEMENT CROSS-CHECK:")
-    print(f"  Trades where IEM reconstruction disagreed with Kalshi result: {summary['settlement_mismatches']}")
+    audit = summary["settlement_audit"]
+    print(f"  P&L source: {audit['pnl_source']}")
+    print(f"  Market rows with Kalshi result labels: {audit['market_rows_with_kalshi_result']}/{audit['total_market_rows']}")
+    print(f"  Market rows reconstructable from IEM: {audit['market_rows_reconstructable_from_iem']}")
+    print(f"  Market-level IEM/Kalshi mismatches: {audit['market_rows_iem_vs_kalshi_mismatch']}")
+    print(f"  Trade-level IEM/Kalshi mismatches: {audit['trade_rows_iem_vs_kalshi_mismatch']}")
     print(f"\nSaved full trade-by-trade results to {RESULTS_CSV}")
     print(f"Saved summary to {SUMMARY_JSON}")
 
@@ -1003,6 +1153,9 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
         "TAIL_NO": summarize_trades(trades[trades["sleeve"] == "TAIL_NO"]) if not trades.empty else summarize_trades(trades),
         "DEEP_TAIL_NO": summarize_trades(trades[trades["sleeve"] == "DEEP_TAIL_NO"]) if not trades.empty else summarize_trades(trades),
     }
+    audit = settlement_audit(engine, trades)
+    fill_stress = {"DEEP_TAIL_NO": stress_fill_realism(trades)}
+    walk_forward = walk_forward_validation(engine)
     learned_trades = engine.run(
         BacktestConfig(
             gap_threshold=DEFAULT_CORE_GAP_PP,
@@ -1041,7 +1194,10 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
             "fixed_weights_baseline": summarize_trades(core),
             "inverse_mae_weights": summarize_trades(learned_core),
         },
-        "settlement_mismatches": int(trades["settlement_mismatch"].sum()) if not trades.empty else 0,
+        "settlement_audit": audit,
+        "settlement_mismatches": audit["trade_rows_iem_vs_kalshi_mismatch"],
+        "fill_stress": fill_stress,
+        "walk_forward": walk_forward,
         "optimal": {
             "best_gap_threshold_pp": int(best_gap_key.split("_")[-1].replace("pp", "")),
             "best_entry_timing": best_timing,
