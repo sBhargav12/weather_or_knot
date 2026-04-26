@@ -1,0 +1,147 @@
+{
+  "atlas_rows": 292,
+  "generated_at_utc": "2026-04-26T14:09:15.350660+00:00",
+  "scope": "settled markets only for return/calibration metrics",
+  "source": "Becker Kalshi parquet dataset under data/kalshi",
+  "tables": {
+    "dataset_scope": {
+      "columns": [
+        "table_name",
+        "segment",
+        "trades",
+        "contracts",
+        "tickers",
+        "event_tickers",
+        "min_trade_time",
+        "max_trade_time",
+        "avg_taker_return",
+        "avg_maker_return"
+      ],
+      "rows": 3
+    },
+    "favorite_longshot_by_decile": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_yes_price",
+        "realized_yes_rate",
+        "realized_minus_price"
+      ],
+      "rows": 36
+    },
+    "intraday_drift_from_first_trade": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "avg_drift_from_first_trade",
+        "avg_yes_price"
+      ],
+      "rows": 98
+    },
+    "liquidity_by_volume_oi": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_taker_return",
+        "avg_maker_return",
+        "avg_yes_calibration_edge",
+        "avg_open_interest"
+      ],
+      "rows": 8
+    },
+    "maker_taker_by_family": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_taker_return",
+        "avg_maker_return",
+        "avg_yes_calibration_edge"
+      ],
+      "rows": 3
+    },
+    "maker_taker_by_hour": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_taker_return",
+        "avg_maker_return",
+        "taker_yes_share",
+        "vwap_yes"
+      ],
+      "rows": 48
+    },
+    "maker_taker_by_price_bucket": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_yes_price",
+        "realized_yes_rate",
+        "yes_calibration_edge",
+        "avg_taker_return",
+        "avg_maker_return"
+      ],
+      "rows": 24
+    },
+    "temperature_city_summary": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "tickers",
+        "avg_taker_return",
+        "avg_maker_return",
+        "avg_yes_calibration_edge",
+        "taker_yes_share"
+      ],
+      "rows": 8
+    },
+    "trade_size_effects": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_taker_return",
+        "avg_maker_return",
+        "taker_win_rate",
+        "avg_contracts"
+      ],
+      "rows": 16
+    },
+    "weather_temperature_by_hour": {
+      "columns": [
+        "table_name",
+        "segment",
+        "bucket",
+        "trades",
+        "contracts",
+        "avg_taker_return",
+        "avg_maker_return",
+        "avg_yes_calibration_edge",
+        "taker_yes_share",
+        "vwap_yes"
+      ],
+      "rows": 48
+    }
+  }
+}

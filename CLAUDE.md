@@ -234,6 +234,24 @@ Settlement truth: `kalshi_result_yes` is nullable and comes only from Becker `ma
 
 Weather/fair-value features are currently NYC-only because local historical forecast/actual files are KNYC-specific. NYC rows with raw Gumbel model probability: 45,686. NYC rows with diagnostic actual temperature: 46,335. `model_prob_calibrated` and `edge_pp_calibrated` are intentionally null until calibration phases. `forecast_vintage_status` is `daily_open_meteo_no_intraday_vintage`; true forecast-run timestamps are still missing.
 
+Phase 3 exchange-wide microstructure atlas:
+- Build command: `.venv/bin/python research/microstructure_atlas.py`
+- Script: `research/microstructure_atlas.py`
+- Aggregate atlas: `data/research/microstructure_atlas.parquet`
+- Summary JSON: `data/research/microstructure_atlas_summary.json`
+- Report: `reports/microstructure_atlas.md`
+- Figures: `reports/figures/price_calibration_by_bucket.png`, `maker_return_by_hour.png`, `temperature_city_maker_return.png`, `intraday_drift_from_first_trade.png`
+
+Latest atlas scope uses settled Becker markets only: non-weather 63,603,934 trades / 526,085 tickers; temperature 3,612,718 trades / 15,415 tickers; other weather 545,696 trades / 12,733 tickers. All returns are gross of explicit Kalshi fees and use `markets.result` settlement labels. Taker return is computed from the side the taker bought; maker return is the mirrored passive side. This is execution-prior research, not alpha proof and not a live-trading signal.
+
+Key Phase 3 findings:
+- Temperature trades show average gross taker return -1.52pp and average gross maker return +1.52pp per contract before fees.
+- KXHIGHNY is the largest temperature city slice and has the strongest gross maker return in the city summary: 799,571 trades, 52.0M contracts, +1.95pp average maker return, taker-YES share 61.6%.
+- Weather price buckets 60-90c show the strongest gross maker-return slices in the atlas, especially 80-90c (+3.71pp), 70-80c (+3.20pp), and 60-70c (+2.99pp). Treat these as fill/slippage priors, not live entries.
+- Hour-of-day gross maker returns vary materially; weather hours 5, 19, 17, 0, 16, and 15 ET are among the stronger positive maker-return windows.
+- Temperature calibration is materially bucket-dependent: 60-70c and 70-80c YES buckets realized far below price in the historical sample, while low-price temperature buckets were closer to fair. Deep-tail research should keep 00-05, 05-10, and 90-100 separate.
+- Observed executions cannot identify unfilled passive-order probability. True queue/fill modeling still requires our own proposed, unfilled, cancelled, and filled order logs.
+
 ---
 
 ## Strategy Sleeves
