@@ -174,6 +174,7 @@ Current methodology:
 - Baseline core backtest follows live `config.MIN_GAP_PP` (currently 20pp), `9AM` entry, fixed WeatherBot-style weights unless a comparison explicitly selects inverse-MAE weights. The threshold bakeoff compares 20/25/30 before promoting any new production threshold.
 - `models/distributional_temp.py` is the research-only bracket-coherent model. It maps one Gumbel daily-high distribution onto all brackets and normalizes probabilities so one day's brackets sum to 1.0.
 - `features/bracket_targets.py` builds one row per date/bracket with consensus temperature, spread, bracket-edge distances, wing/central flags, prior-day error, hours to close, regime flags, market price, and gap.
+- The bracket-coherent model has optional isotonic calibration for research. Calibrated probabilities are renormalized across each daily bracket set so total mass remains 1.0. Backtest output compares old independent probabilities vs coherent raw vs coherent calibrated probabilities using Brier score, log loss, mass checks, and central-vs-wing breakdowns.
 
 Latest cached backtest output after the research-hardening pass:
 - Core baseline at 20pp is recalculated by `scripts/backtest.py`; do not treat 20pp as final strategy truth until threshold bakeoff results are reviewed.
@@ -182,6 +183,7 @@ Latest cached backtest output after the research-hardening pass:
 - Settlement audit: 3426/3426 market rows have Kalshi result labels; 60 market-level IEM/Kalshi mismatches; 5 trade-level mismatches.
 - `DEEP_TAIL_NO` baseline: 492 trades, 94.1% win rate, +$46.29 net.
 - `DEEP_TAIL_NO` stress tests: +3¢ worse fills still +$31.89; +5¢ worse fills still +$23.42; missing best 10% plus +3¢ still +$22.55.
+- Probability evaluation holdout: old and coherent raw both Brier 0.1354 / log loss 0.4401 / mass 1.0000; coherent calibrated improves to Brier 0.1131 / log loss 0.3489 / mass 1.0000. Calibrated holdout is much stronger on wings (Brier 0.0387) than central brackets (Brier 0.1503), so future calibration may need central-vs-wing separation.
 
 Interpretation: good research baseline, not proof of durable edge. Current research requirement: threshold bakeoff plus true forecast-vintage data by entry time.
 

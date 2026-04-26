@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.stats import gumbel_r
+from sklearn.isotonic import IsotonicRegression
 
 import config
 
@@ -24,6 +25,7 @@ class DistributionalTempModel:
 
     mu_correction: float = config.GUMBEL_MU_CORRECTION
     beta: float = config.GUMBEL_BETA
+    calibrator: Optional[IsotonicRegression] = None
 
     def compute_consensus(
         self,
@@ -83,6 +85,65 @@ class DistributionalTempModel:
             probs[largest] = max(0.0, probs[largest] + residual)
         return probs
 
+    def fit_calibrator(self, raw_probs: list[float], outcomes: list[int]) -> bool:
+        """Fit optional isotonic calibration when enough resolved samples exist."""
+        clean = [
+            (float(prob), int(outcome))
+            for prob, outcome in zip(raw_probs, outcomes)
+            if prob is not None and pd.notna(prob) and outcome is not None and pd.notna(outcome)
+        ]
+        if len(clean) < 10:
+            self.calibrator = None
+            return False
+        probs = np.array([item[0] for item in clean], dtype=float)
+        labels = np.array([item[1] for item in clean], dtype=int)
+        self.calibrator = IsotonicRegression(out_of_bounds="clip")
+        self.calibrator.fit(probs, labels)
+        return True
+
+    def calibrated_prob(self, raw_prob: float) -> float:
+        """Return calibrated single-market probability, clipped to [0, 1]."""
+        if self.calibrator is None:
+            return float(np.clip(raw_prob, 0.0, 1.0))
+        calibrated = float(self.calibrator.predict(np.array([raw_prob], dtype=float))[0])
+        return float(np.clip(calibrated, 0.0, 1.0))
+
+    def calibrated_probabilities(self, raw_probs: dict[str, float]) -> dict[str, float]:
+        """Calibrate each bracket and renormalize so daily mass remains 1.0."""
+        calibrated = {ticker: self.calibrated_prob(prob) for ticker, prob in raw_probs.items()}
+        total = sum(calibrated.values())
+        if total <= 0:
+            return dict(raw_probs)
+        normalized = {ticker: value / total for ticker, value in calibrated.items()}
+        residual = 1.0 - sum(normalized.values())
+        if normalized and abs(residual) > 0:
+            largest = max(normalized, key=normalized.get)
+            normalized[largest] = max(0.0, normalized[largest] + residual)
+        return normalized
+
+    def evaluate(self, predicted: pd.DataFrame, actual: pd.DataFrame) -> dict:
+        """Evaluate flattened bracket probabilities and daily mass coherence."""
+        merged = predicted.merge(actual, on=["date", "ticker"], how="inner", suffixes=("", "_actual"))
+        if merged.empty:
+            return _empty_eval()
+        probs = merged["probability"].astype(float).clip(1e-9, 1 - 1e-9)
+        outcomes = merged["outcome"].astype(int)
+        brier = float(np.mean((probs - outcomes) ** 2))
+        log_loss = float(-np.mean(outcomes * np.log(probs) + (1 - outcomes) * np.log(1 - probs)))
+        mass_by_day = predicted.groupby("date")["probability"].sum()
+        return {
+            "brier_score": brier,
+            "log_loss": log_loss,
+            "prob_mass_check": float(mass_by_day.mean()) if not mass_by_day.empty else 0.0,
+            "prob_mass_min": float(mass_by_day.min()) if not mass_by_day.empty else 0.0,
+            "prob_mass_max": float(mass_by_day.max()) if not mass_by_day.empty else 0.0,
+            "n_days": int(predicted["date"].nunique()),
+            "n_rows": int(len(merged)),
+            "calibration_curve": calibration_curve_summary(probs, outcomes),
+            "per_bracket": _breakdown(merged, "ticker"),
+            "central_vs_wing": _breakdown(merged.assign(group=merged["bracket_type"].map(_central_or_wing)), "group"),
+        }
+
 
 def _finite_or_none(value) -> Optional[float]:
     if value is None or pd.isna(value):
@@ -100,3 +161,53 @@ def _normalise_bracket_type(value: str) -> str:
     if lowered in {"central", "range"}:
         return "range"
     return lowered
+
+
+def calibration_curve_summary(probs, outcomes, bins: int = 5) -> list[dict]:
+    frame = pd.DataFrame({"probability": probs, "outcome": outcomes})
+    frame["bin"] = pd.cut(frame["probability"], bins=np.linspace(0, 1, bins + 1), include_lowest=True)
+    rows = []
+    for bucket, group in frame.groupby("bin", observed=True):
+        rows.append(
+            {
+                "bin": str(bucket),
+                "count": int(len(group)),
+                "avg_pred": float(group["probability"].mean()),
+                "empirical_rate": float(group["outcome"].mean()),
+            }
+        )
+    return rows
+
+
+def _breakdown(frame: pd.DataFrame, column: str) -> dict:
+    rows = {}
+    for key, group in frame.groupby(column):
+        probs = group["probability"].astype(float).clip(1e-9, 1 - 1e-9)
+        outcomes = group["outcome"].astype(int)
+        rows[str(key)] = {
+            "rows": int(len(group)),
+            "brier_score": float(np.mean((probs - outcomes) ** 2)),
+            "log_loss": float(-np.mean(outcomes * np.log(probs) + (1 - outcomes) * np.log(1 - probs))),
+            "avg_prob": float(probs.mean()),
+            "hit_rate": float(outcomes.mean()),
+        }
+    return rows
+
+
+def _central_or_wing(value: str) -> str:
+    return "central" if _normalise_bracket_type(str(value)) == "range" else "wing"
+
+
+def _empty_eval() -> dict:
+    return {
+        "brier_score": 0.0,
+        "log_loss": 0.0,
+        "prob_mass_check": 0.0,
+        "prob_mass_min": 0.0,
+        "prob_mass_max": 0.0,
+        "n_days": 0,
+        "n_rows": 0,
+        "calibration_curve": [],
+        "per_bracket": {},
+        "central_vs_wing": {},
+    }

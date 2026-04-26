@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config
+from models.distributional_temp import DistributionalTempModel
 
 DATA_DIR = ROOT / "data"
 MARKETS_CSV = DATA_DIR / "kxhighny_markets.csv"
@@ -1057,6 +1058,92 @@ def threshold_bakeoff(engine: BacktestEngine) -> dict:
     return out
 
 
+def probability_evaluation(engine: BacktestEngine) -> dict:
+    rows = []
+    weights = normalize_weights(FIXED_ENSEMBLE_WEIGHTS)
+    required = ["kalshi_result_yes", "gfs_maxt", "ecmwf_maxt", "ukmo_maxt", "nbm_maxt"]
+    df = engine.dataset.dropna(subset=required).copy()
+    model = DistributionalTempModel()
+
+    for date_value, group in df.groupby("target_date", sort=True):
+        first = group.iloc[0]
+        consensus = (
+            weights["ecmwf"] * float(first["ecmwf_maxt"])
+            + weights["gfs"] * float(first["gfs_maxt"])
+            + weights["ukmo"] * float(first["ukmo_maxt"])
+            + weights["nbm"] * float(first["nbm_maxt"])
+        )
+        brackets = []
+        for _, row in group.iterrows():
+            brackets.append(
+                {
+                    "ticker": row["ticker"],
+                    "lo_f": None if pd.isna(row["floor_strike"]) else float(row["floor_strike"]),
+                    "hi_f": None if pd.isna(row["cap_strike"]) else float(row["cap_strike"]),
+                    "bracket_type": row["bracket_type"],
+                }
+            )
+        coherent = model.bracket_probabilities(consensus, brackets)
+        for _, row in group.iterrows():
+            lo = None if pd.isna(row["floor_strike"]) else float(row["floor_strike"])
+            hi = None if pd.isna(row["cap_strike"]) else float(row["cap_strike"])
+            btype = str(row["bracket_type"])
+            rows.append(
+                {
+                    "date": str(date_value),
+                    "ticker": row["ticker"],
+                    "bracket_type": btype,
+                    "outcome": int(bool(row["kalshi_result_yes"])),
+                    "old_probability": gumbel_prob(lo, hi, btype, consensus),
+                    "coherent_probability": coherent.get(row["ticker"], np.nan),
+                }
+            )
+
+    prob_df = pd.DataFrame(rows).dropna()
+    if prob_df.empty:
+        return {}
+    dates = sorted(prob_df["date"].unique())
+    split = max(1, len(dates) // 2)
+    train_dates = set(dates[:split])
+    holdout_dates = set(dates[split:])
+    train = prob_df[prob_df["date"].isin(train_dates)]
+    holdout = prob_df[prob_df["date"].isin(holdout_dates)].copy()
+
+    cal_model = DistributionalTempModel()
+    fitted = cal_model.fit_calibrator(train["coherent_probability"].tolist(), train["outcome"].tolist())
+    calibrated_frames = []
+    for date_value, group in holdout.groupby("date", sort=True):
+        raw = dict(zip(group["ticker"], group["coherent_probability"]))
+        calibrated = cal_model.calibrated_probabilities(raw)
+        out = group[["date", "ticker", "bracket_type", "outcome"]].copy()
+        out["calibrated_probability"] = out["ticker"].map(calibrated)
+        calibrated_frames.append(out)
+    calibrated_holdout = pd.concat(calibrated_frames, ignore_index=True) if calibrated_frames else pd.DataFrame()
+
+    actual_all = prob_df[["date", "ticker", "bracket_type", "outcome"]]
+    actual_holdout = holdout[["date", "ticker", "bracket_type", "outcome"]]
+    return {
+        "old_all": _evaluate_probability_frame(model, prob_df, "old_probability", actual_all),
+        "coherent_raw_all": _evaluate_probability_frame(model, prob_df, "coherent_probability", actual_all),
+        "old_holdout": _evaluate_probability_frame(model, holdout, "old_probability", actual_holdout),
+        "coherent_raw_holdout": _evaluate_probability_frame(model, holdout, "coherent_probability", actual_holdout),
+        "coherent_calibrated_holdout": _evaluate_probability_frame(
+            model,
+            calibrated_holdout,
+            "calibrated_probability",
+            calibrated_holdout[["date", "ticker", "bracket_type", "outcome"]] if not calibrated_holdout.empty else actual_holdout,
+        ),
+        "calibrator_fitted": fitted,
+        "train_days": len(train_dates),
+        "holdout_days": len(holdout_dates),
+    }
+
+
+def _evaluate_probability_frame(model: DistributionalTempModel, frame: pd.DataFrame, probability_col: str, actual: pd.DataFrame) -> dict:
+    predicted = frame[["date", "ticker", "bracket_type", probability_col]].rename(columns={probability_col: "probability"})
+    return model.evaluate(predicted, actual)
+
+
 def seasonal_multipliers(monthly: dict) -> dict:
     if not monthly:
         return {}
@@ -1153,6 +1240,18 @@ def print_summary(summary: dict) -> None:
     print("\nMODEL WEIGHT COMPARISON:")
     for name, item in summary["weight_comparison"].items():
         print(f"  {name}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
+    print("\nPROBABILITY MODEL EVALUATION:")
+    prob_eval = summary["probability_evaluation"]
+    print(f"  Calibration fitted: {prob_eval['calibrator_fitted']} (train days={prob_eval['train_days']}, holdout days={prob_eval['holdout_days']})")
+    for name in ["old_holdout", "coherent_raw_holdout", "coherent_calibrated_holdout"]:
+        item = prob_eval[name]
+        print(
+            f"  {name}: Brier {item['brier_score']:.4f}, log loss {item['log_loss']:.4f}, "
+            f"mass avg {item['prob_mass_check']:.4f}"
+        )
+    print("  Central vs wing (coherent calibrated holdout):")
+    for group, item in prob_eval["coherent_calibrated_holdout"]["central_vs_wing"].items():
+        print(f"    {group}: rows {item['rows']}, Brier {item['brier_score']:.4f}, log loss {item['log_loss']:.4f}")
     wf = summary["walk_forward"]
     print("\nWALK-FORWARD VALIDATION:")
     print(f"  Method: {wf['method']}")
@@ -1197,6 +1296,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
     fill_stress = {"DEEP_TAIL_NO": stress_fill_realism(trades)}
     walk_forward = walk_forward_validation(engine)
     bakeoff = threshold_bakeoff(engine)
+    prob_eval = probability_evaluation(engine)
     learned_trades = engine.run(
         BacktestConfig(
             gap_threshold=DEFAULT_CORE_GAP_PP,
@@ -1236,6 +1336,7 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
             "fixed_weights_baseline": summarize_trades(core),
             "inverse_mae_weights": summarize_trades(learned_core),
         },
+        "probability_evaluation": prob_eval,
         "settlement_audit": audit,
         "settlement_mismatches": audit["trade_rows_iem_vs_kalshi_mismatch"],
         "fill_stress": fill_stress,
