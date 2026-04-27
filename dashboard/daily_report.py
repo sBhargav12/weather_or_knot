@@ -112,6 +112,7 @@ def print_paper_strategy_health(db_path: str, report_date: str | None = None) ->
         f"  Paper ensemble weights: {weights}",
         "  Candidate rejection counts:",
         f"    suspended_policy:          {count_candidate_status('suspended_policy')}",
+        f"    low_core_confidence:       {count_candidate_status('rejected_low_core_confidence')}",
         f"    rejected_execution_margin: {count_candidate_status('rejected_execution_margin')}",
         f"    rejected_regime:           {count_candidate_status('rejected_regime')}",
         f"    rejected_seasonal:         {count_candidate_status('rejected_seasonal')}",

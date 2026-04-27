@@ -485,10 +485,24 @@ of `config.py`:
 - `PAPER_USE_CALIBRATED_PROBS=False`
 
 Paper-only execution margins are conservative placeholders: core requires
-`8pp` net edge after costs, wings `6pp`, and deep-tail `4pp`, plus a `1pp` fee
+`10pp` net edge after costs, wings `6pp`, and deep-tail `4pp`, plus a `1pp` fee
 margin. These are not live thresholds. TAIL_NO is suspended in paper but should
 remain a logged research candidate. Seasonal and regime controls are soft size
 multipliers only; they must not hard-stop whole months or regimes.
+
+After the report-improvement backtest, the paper policy now also applies two
+extra research-only selection controls:
+- CORE candidates require `confidence_score >= 60`; lower-confidence CORE
+  candidates are logged with `candidate_status='rejected_low_core_confidence'`.
+- Lower/cold wing candidates (`lower_tail`/`wing_low`) are suspended in paper and
+  logged with `candidate_status='suspended_policy'`. This is based on cached
+  backtest weakness in both CORE wing-low and DEEP_TAIL_NO wing-low; it is not a
+  live ban.
+
+The paper execution-cost reserve now includes observed/fallback half-spread,
+estimated maker fee in percentage-point terms, and a sleeve stress buffer
+(`CORE=3pp`, `DEEP_TAIL_NO=1pp`, other wings=1pp) before subtracting the
+separate `1pp` fee margin.
 
 `paper_trader/policy.py` is the paper-only policy adapter. `PaperTrader.on_signal()`
 now evaluates candidates through it before simulated paper entry:
@@ -517,8 +531,8 @@ by bracket family and sleeve.
 
 Latest paper-only validation:
 - Targeted command: `.venv/bin/python -m pytest tests/test_paper_policy_config.py tests/test_execution_margin_policy.py tests/test_tail_no_paper_suspension.py tests/test_wing_central_split_policy.py tests/test_seasonal_regime_scaling.py tests/test_paper_strategy_health_report.py tests/test_simulator_report.py -v`
-- Targeted result: 19 passed.
-- Full test suite: `.venv/bin/python -m pytest tests/ -v` → 184 passed, 10 warnings.
+- Targeted result after report-policy implementation: `uv run python -m pytest tests/test_paper_policy_config.py tests/test_execution_margin_policy.py tests/test_tail_no_paper_suspension.py tests/test_wing_central_split_policy.py tests/test_seasonal_regime_scaling.py tests/test_paper_strategy_health_report.py tests/test_simulator_report.py -v` → 21 passed.
+- Full test suite after report-policy implementation: `uv run python -m pytest tests/ -v` → 186 passed, 10 warnings.
 - Safe paper integration used a temporary SQLite DB only: TAIL_NO logged and produced no trade; DEEP_TAIL_NO produced one paper trade; report rendered the new paper strategy health section.
 
 `PaperTrader.on_signal()` → `simulate_entry()`: deducts `stake + maker_fee_entry` from bankroll.

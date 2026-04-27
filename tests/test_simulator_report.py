@@ -44,7 +44,7 @@ def test_signal_to_trade_and_target_exit(tmp_path):
         "direction": "YES",
         "market_price": 0.50,
         "entry_price": 0.50,
-        "model_prob": 0.60,
+        "model_prob": 0.75,
         "spread": "0.02",
         "confidence_score": 85.0,  # high confidence → full QK cap
     }

@@ -6,6 +6,7 @@ from typing import Any
 
 import config_paper
 from execution.fill_model import HALF_SPREADS
+from execution.fill_model import kalshi_fee
 
 
 REGIME_PERIODS = [
@@ -131,14 +132,32 @@ def estimate_execution_cost_pp(signal: dict) -> float:
     research fill model.
     """
     family = bracket_family(signal)
+    sleeve = canonical_sleeve(signal)
     fallback = HALF_SPREADS.get(family, HALF_SPREADS["central"]) * 100.0
     spread = signal.get("spread")
+    spread_reserve = fallback
     if spread is not None:
         try:
-            return max(0.0, float(spread) * 50.0)
+            spread_reserve = max(0.0, float(spread) * 50.0)
         except (TypeError, ValueError):
             pass
-    return float(fallback)
+
+    try:
+        entry_price = float(signal.get("entry_price", signal.get("market_price", 0.50)))
+    except (TypeError, ValueError):
+        entry_price = 0.50
+    maker_fee_pp = kalshi_fee(min(max(entry_price, 0.01), 0.99), 1, "maker") * 100.0
+
+    if sleeve == "CORE":
+        stress_buffer = float(config_paper.PAPER_CORE_STRESS_BUFFER_PP)
+    elif sleeve == "DEEP_TAIL_NO":
+        stress_buffer = float(config_paper.PAPER_DEEP_TAIL_STRESS_BUFFER_PP)
+    elif family != "central":
+        stress_buffer = float(config_paper.PAPER_WING_STRESS_BUFFER_PP)
+    else:
+        stress_buffer = 0.0
+
+    return float(spread_reserve + maker_fee_pp + stress_buffer)
 
 
 def min_required_net_edge_pp(sleeve: str, family: str) -> float:
@@ -159,6 +178,25 @@ def paper_policy_allows_trade(signal: dict) -> PaperPolicyDecision:
     net_edge = raw_edge - execution_cost - fee_margin
     required = min_required_net_edge_pp(sleeve, family)
     regime, seasonal_mult, regime_mult, final_mult = final_size_multiplier(signal)
+    confidence = float(signal.get("confidence_score", 50.0) or 50.0)
+
+    if config_paper.PAPER_SUSPEND_LOWER_WING and family == "lower_tail":
+        return PaperPolicyDecision(
+            False,
+            "suspended_policy",
+            "lower/cold wing suspended in paper after report-improvement backtest",
+            sleeve,
+            family,
+            raw_edge,
+            execution_cost,
+            fee_margin,
+            net_edge,
+            required,
+            seasonal_mult,
+            regime,
+            regime_mult,
+            final_mult,
+        )
 
     if sleeve == "TAIL_NO" and not config_paper.PAPER_TAIL_NO_ENABLED:
         return PaperPolicyDecision(
@@ -182,6 +220,26 @@ def paper_policy_allows_trade(signal: dict) -> PaperPolicyDecision:
             False,
             "suspended_policy",
             "DEEP_TAIL_NO disabled by paper config",
+            sleeve,
+            family,
+            raw_edge,
+            execution_cost,
+            fee_margin,
+            net_edge,
+            required,
+            seasonal_mult,
+            regime,
+            regime_mult,
+            final_mult,
+        )
+    if sleeve == "CORE" and confidence < float(config_paper.PAPER_CORE_MIN_CONFIDENCE):
+        return PaperPolicyDecision(
+            False,
+            "rejected_low_core_confidence",
+            (
+                f"CORE confidence {confidence:.1f} below paper minimum "
+                f"{config_paper.PAPER_CORE_MIN_CONFIDENCE:.1f}"
+            ),
             sleeve,
             family,
             raw_edge,

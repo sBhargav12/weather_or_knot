@@ -33,6 +33,7 @@ PAPER_REQUIRE_EXECUTION_MARGIN = True
 PAPER_USE_SEASONAL_SCALING = True
 PAPER_USE_REGIME_SCALING = True
 PAPER_USE_CALIBRATED_PROBS = False
+PAPER_SUSPEND_LOWER_WING = True
 
 
 # Research weights are allowed in paper-only fallback experiments. These do not
@@ -43,10 +44,14 @@ PAPER_ENSEMBLE_WEIGHTS = dict(config.FALLBACK_ENSEMBLE_WEIGHTS)
 # Raw edge must clear an execution-cost reserve before paper entry. Defaults are
 # conservative placeholders derived from the fill stress warning, not optimized
 # live thresholds.
-PAPER_MIN_NET_EDGE_PP_CORE = 8.0
+PAPER_MIN_NET_EDGE_PP_CORE = 10.0
 PAPER_MIN_NET_EDGE_PP_WING = 6.0
 PAPER_MIN_NET_EDGE_PP_DEEP_TAIL = 4.0
 PAPER_FEE_MARGIN_PP = 1.0
+PAPER_CORE_MIN_CONFIDENCE = 60.0
+PAPER_CORE_STRESS_BUFFER_PP = 3.0
+PAPER_DEEP_TAIL_STRESS_BUFFER_PP = 1.0
+PAPER_WING_STRESS_BUFFER_PP = 1.0
 
 
 # Soft sizing controls. No month or regime is forced to zero. Weak periods are
@@ -86,6 +91,7 @@ PAPER_SLEEVE_STATES = {
     "CORE": "active",
     "TAIL_NO": "suspended_policy",
     "DEEP_TAIL_NO": "active",
+    "LOWER_WING": "suspended_policy",
 }
 
 
