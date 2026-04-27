@@ -15,6 +15,7 @@ uv run ruff format .                 # format
 # KXHIGHNY API-only backtest (does NOT use Becker parquet data)
 uv run python scripts/backtest.py --skip-fetch  # use cached CSVs
 uv run python scripts/backtest.py --refresh     # re-download Kalshi/IEM/Open-Meteo data
+uv run python scripts/strategy_variation_research.py  # research-only broad strategy/exit/sleeve sweep
 
 # Run the pipeline (requires env vars below)
 .venv/bin/python main.py             # run indefinitely
@@ -196,6 +197,37 @@ Latest cached backtest output after adding coherent-probability simulation and r
 - Regime report from the same cached run: `pre_HGEFS` was strongest overall (47 core trades, 80.9% win rate, +$12.79, Brier 0.0992); the long `AIFS_ENS_to_NBM_v50` period was much weaker economically (220 trades, 56.4%, +$4.74, Brier 0.1361). Central brackets remain materially harder than wings in every sufficiently populated era. The `NBM_v50_on` slice has only 8 core trades, so treat it as a smoke signal, not evidence.
 
 Interpretation: good research baseline, not proof of durable edge. Current research requirement: threshold bakeoff plus true forecast-vintage data by entry time.
+
+### Strategy Variation Research Sweep
+
+`scripts/strategy_variation_research.py` is a research-only sweep runner. It does not change `config.py`, live thresholds, paper trader behavior, `main.py`, LaunchAgent, or execution code.
+
+Generated outputs:
+- `data/research/strategy_variation_core_grid.csv`
+- `data/research/strategy_variation_exit_grid.csv`
+- `data/research/strategy_variation_becker_exit_grid.csv`
+- `data/research/strategy_variation_sleeve_grid.csv`
+- `data/research/strategy_variation_top_trades.csv`
+- `data/research/strategy_variation_summary.json`
+- `reports/strategy_variation_research.md`
+
+Latest run (`2026-04-27`, git `ae7dcac`) tested 36,000 core variants, 320 sleeve variants, 35 checkpoint exit variants, and 35 Becker trade-print exit variants.
+
+Baseline current core from the sweep:
+- 460 trades, 323 trading days, 57.6% win rate, 52.9% profitable day rate, +$17.38 net at $1 contract sizing, average entry 51.8c.
+
+Research-only findings:
+- Highest raw core P&L came from `open` timing variants, but treat these as likely forecast-vintage leaky because the cached Open-Meteo row is a target-date daily forecast with no cycle timestamp while the market opens the day before. Do not promote open-entry rules without true forecast vintages.
+- Under same-day timing with current model gate + dead-zone, broader `15c-85c` price bands produced higher in-sample net P&L than the live `25c-75c` band. Example: 9AM, 15pp, `15c-85c`, both directions, all brackets: 706 trades, 58.8% win rate, +$31.52. This is not live-approved; it needs walk-forward, fill stress, and NWS-error risk review.
+- Current live-like 9AM/20pp/25c-75c all-family core remains: 460 trades, 57.6%, +$17.38.
+- Same-day current-band timing/gap highlights: 11AM/25pp central-only produced 303 trades, 55.8%, +$21.46; 1PM/25pp central-only produced 244 trades, 55.7%, +$21.00; 9AM/25pp all-family produced 353 trades, 57.5%, +$19.08. These are research candidates only.
+- Direction split confirms NO-side core is stronger than YES-side: 9AM/20pp/current band NO-only produced 305 trades, 65.2%, +$14.37, while the full current core produced +$17.38.
+- Exit target tests were unfavorable in the available replay data. Checkpoint and Becker trade-print replay both showed hold-to-settlement had the best raw P&L. Becker replay: no target/no stop +$17.38; 80c target/no stop +$10.40; 75c target/no stop +$7.67; 68c target/no stop -$4.18. This does not eliminate NWS error risk; it only says low target exits cap historical winners.
+- Stop losses looked especially damaging in observed trade-print replay. This is because many eventual winners wobble intraday before recovering. Do not promote hard stops without a richer path/quote replay and NWS-error risk layer.
+- Deep-tail NO same-day sweeps show that loosening `P_yes < 2%` can raise in-sample P&L but weakens quality. At 9AM with YES price >5c: 2% gave 397 trades, 89.9%, +$25.53 in this broad grid; 5% gave 529 trades, 87.0%, +$28.88; 10% gave 637 trades, 85.2%, +$34.51. Earlier stress tests showed the incremental 2%-5% trades turn negative under +3c fill stress, so keep the live/paper threshold strict until forward validation.
+- Near-confirmed NO harvest had very high win rate but weak or negative net P&L because NO entries are near 99c and fees consume the 1c residual payout. This confirms it is not a direct Kalshi replacement for the aenews2 Polymarket-style confirmation trade.
+
+Main next research need: true forecast-vintage data and a fuller bid/ask/orderbook or own-order-log replay. Trade prints can test observed target/stop touches, but cannot prove passive maker fill probability.
 
 ---
 
