@@ -531,6 +531,41 @@ Position sizing uses quarter-Kelly capped at `MAX_TRADE_PCT=0.05` (5% of bankrol
 
 ---
 
+## Report Improvement Backtest
+
+`scripts/report_improvement_backtest.py` is a research-only overlay inspired by
+`/Users/bhargavsukhavasi/Downloads/deep-research-report (6).md`. It compares
+the cached current tradeable backtest (`CORE` + `DEEP_TAIL_NO`, with `TAIL_NO`
+excluded) against report-style selection improvements that are testable from
+`data/backtest_results.csv`.
+
+Generated outputs:
+- `data/research/report_improvement_backtest_trades.csv`
+- `data/research/report_improvement_backtest_summary.json`
+- `reports/report_improvement_backtest.md`
+
+Latest run (`uv run python scripts/report_improvement_backtest.py`, local cached
+rows, research-only):
+- Current tradeable baseline: 973 trades, 460 trading days, 74.5% win rate,
+  +$49.24 saved-net P&L, +$55.77 maker-net P&L, -$2.61 under simple +3c stress.
+- Combined report-policy overlay: 602 trades, 353 trading days, 80.4% win rate,
+  +$68.54 saved-net P&L, +$72.75 maker-net P&L, +$36.63 under simple +3c stress.
+- Win-rate difference versus current cached strategy: +5.9 percentage points.
+- Combined policy by sleeve: CORE 253 trades, 63.6% win, +$29.29 saved net;
+  DEEP_TAIL_NO 349 trades, 92.6% win, +$39.25 saved net.
+- The uplift comes from selection, not a retrained forecast model: exclude the
+  cold/lower-wing subset that is negative in cached CORE and DEEP_TAIL_NO rows,
+  require CORE confidence >=60, and require positive estimated net edge after a
+  simple execution-cost prior.
+
+This backtest does **not** retrain EMOS, quantile forests, distributional
+forests, or gradient boosting. It also does not change live thresholds, paper
+policy, `config.py`, `main.py`, `event_triggers.py`, LaunchAgent, or execution
+code. Treat it as an in-sample paper/research candidate; live promotion still
+requires forecast-vintage-complete data and forward paper validation.
+
+---
+
 ## Kalshi Price Conventions
 
 All Kalshi prices are `decimal.Decimal` — never `float`. From the orderbook:

@@ -1,0 +1,130 @@
+{
+  "generated_at": "2026-04-27T01:26:25",
+  "git_sha": "f70175e",
+  "input": "data/backtest_results.csv",
+  "scope": "Research-only overlay on cached settlement-style KXHIGHNY backtest rows. It tests report selection/execution-policy ideas; it does not retrain EMOS, quantile forests, or change live strategy logic.",
+  "policies": [
+    {
+      "policy": "current_strategy",
+      "trades": 973,
+      "trading_days": 460,
+      "win_rate": 0.7451181911613566,
+      "win_rate_delta_pp": 0.0,
+      "saved_net_pnl": 49.239999999999974,
+      "maker_net_pnl": 55.77000000000001,
+      "stress_net_pnl": -2.610000000000035,
+      "sharpe": 0.13448396751009017,
+      "max_drawdown": -17.830000000000013,
+      "avg_entry_price": 0.6778006166495375,
+      "median_entry_price": 0.7,
+      "avg_net_edge_pp": 21.29582243346976
+    },
+    {
+      "policy": "cost_gate_only",
+      "trades": 862,
+      "trading_days": 441,
+      "win_rate": 0.7180974477958236,
+      "win_rate_delta_pp": -2.702074336553295,
+      "saved_net_pnl": 49.90999999999997,
+      "maker_net_pnl": 56.43999999999999,
+      "stress_net_pnl": 4.719999999999967,
+      "sharpe": 0.14759416519901716,
+      "max_drawdown": -16.000000000000014,
+      "avg_entry_price": 0.6426218097447797,
+      "median_entry_price": 0.6599999999999999,
+      "avg_net_edge_pp": 23.69914803637074
+    },
+    {
+      "policy": "drop_cold_wing",
+      "trades": 873,
+      "trading_days": 435,
+      "win_rate": 0.7651775486827033,
+      "win_rate_delta_pp": 2.005935752134669,
+      "saved_net_pnl": 60.67999999999998,
+      "maker_net_pnl": 66.61000000000001,
+      "stress_net_pnl": 14.229999999999967,
+      "sharpe": 0.19027427921659587,
+      "max_drawdown": -12.61,
+      "avg_entry_price": 0.6788774341351661,
+      "median_entry_price": 0.69,
+      "avg_net_edge_pp": 20.597765056054946
+    },
+    {
+      "policy": "core_confidence_60",
+      "trades": 797,
+      "trading_days": 416,
+      "win_rate": 0.7967377666248432,
+      "win_rate_delta_pp": 5.1619575463486616,
+      "saved_net_pnl": 58.369999999999976,
+      "maker_net_pnl": 63.14000000000001,
+      "stress_net_pnl": 15.31999999999997,
+      "sharpe": 0.20891730436868133,
+      "max_drawdown": -17.78,
+      "avg_entry_price": 0.7075156838143035,
+      "median_entry_price": 0.75,
+      "avg_net_edge_pp": 21.424747237023055
+    },
+    {
+      "policy": "report_combined_policy",
+      "trades": 602,
+      "trading_days": 353,
+      "win_rate": 0.8039867109634552,
+      "win_rate_delta_pp": 5.886851980209862,
+      "saved_net_pnl": 68.53999999999998,
+      "maker_net_pnl": 72.75,
+      "stress_net_pnl": 36.62999999999998,
+      "sharpe": 0.32636012978121376,
+      "max_drawdown": -6.660000000000018,
+      "avg_entry_price": 0.6731395348837209,
+      "median_entry_price": 0.7,
+      "avg_net_edge_pp": 23.505333492416895
+    }
+  ],
+  "combined_by_sleeve": [
+    {
+      "sleeve": "CORE",
+      "trades": 253,
+      "win_rate": 0.6363636363636364,
+      "saved_net_pnl": 29.29,
+      "stress_net_pnl": 16.639999999999993,
+      "avg_entry_price": 0.5005928853754941
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "trades": 349,
+      "win_rate": 0.9255014326647565,
+      "saved_net_pnl": 39.249999999999986,
+      "stress_net_pnl": 19.989999999999984,
+      "avg_entry_price": 0.7982234957020057
+    }
+  ],
+  "combined_by_bracket_type": [
+    {
+      "bracket_type": "central",
+      "trades": 527,
+      "win_rate": 0.7836812144212524,
+      "saved_net_pnl": 56.66999999999998,
+      "avg_entry_price": 0.658899430740038
+    },
+    {
+      "bracket_type": "wing_high",
+      "trades": 75,
+      "win_rate": 0.9466666666666667,
+      "saved_net_pnl": 11.869999999999997,
+      "avg_entry_price": 0.7731999999999999
+    }
+  ],
+  "combined_policy_rules": {
+    "tradeable_sleeves": [
+      "CORE",
+      "DEEP_TAIL_NO"
+    ],
+    "tail_no": "excluded/suspended",
+    "cold_wing": "excluded from combined report policy because cached losses show negative net in CORE and DEEP_TAIL_NO",
+    "core_confidence_min": 60.0,
+    "core_min_est_net_edge_pp": 10.0,
+    "deep_tail_min_est_net_edge_pp": 4.0,
+    "execution_cost_pp": "half_spread + maker_fee + sleeve stress buffer",
+    "stress_scenario": "+3c worse entry plus +3c additional exit/repricing friction"
+  }
+}
