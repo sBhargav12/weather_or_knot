@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-04-27T04:10:59",
+  "git_sha": "6a81fdf",
+  "train_min_days": 120,
+  "eval_stride_days": 7,
+  "entry_col": "yes_price_9AM",
+  "days_total": 491,
+  "days_evaluated": 53,
+  "probability_metrics": [
+    {
+      "model_name": "EMOS",
+      "rows": 315,
+      "days": 53,
+      "brier_score": 0.110407891103442,
+      "binary_log_loss": 0.4087551660949271,
+      "winner_log_loss": 1.593649309091712,
+      "mass_avg": 1.0,
+      "mass_min": 0.9999999999999999,
+      "mass_max": 1.0000000000000002
+    },
+    {
+      "model_name": "GUMBEL",
+      "rows": 315,
+      "days": 53,
+      "brier_score": 0.13287052401615934,
+      "binary_log_loss": 0.5159371982517399,
+      "winner_log_loss": 2.026686329533417,
+      "mass_avg": 1.0,
+      "mass_min": 0.9999999999999999,
+      "mass_max": 1.0000000000000002
+    },
+    {
+      "model_name": "HGBR_QUANTILE",
+      "rows": 315,
+      "days": 53,
+      "brier_score": 0.18752076652022764,
+      "binary_log_loss": 0.9195123564376957,
+      "winner_log_loss": 3.8125365221935175,
+      "mass_avg": 1.0,
+      "mass_min": 0.9999999999999999,
+      "mass_max": 1.0
+    },
+    {
+      "model_name": "RF_DISTRIBUTION",
+      "rows": 315,
+      "days": 53,
+      "brier_score": 0.14772113588724722,
+      "binary_log_loss": 1.0620967919142323,
+      "winner_log_loss": 4.251969594187131,
+      "mass_avg": 1.0,
+      "mass_min": 1.0,
+      "mass_max": 1.0
+    }
+  ],
+  "strategy_metrics": [
+    {
+      "model_name": "RF_DISTRIBUTION",
+      "trades": 46,
+      "days": 34,
+      "win_rate": 0.6739130434782609,
+      "net_pnl": 4.34,
+      "sharpe": 0.19822128231616487,
+      "max_drawdown": -3.35,
+      "avg_entry_price": 0.5595652173913044
+    },
+    {
+      "model_name": "EMOS",
+      "trades": 27,
+      "days": 19,
+      "win_rate": 0.7037037037037037,
+      "net_pnl": 3.7399999999999998,
+      "sharpe": 0.2836022677474293,
+      "max_drawdown": -1.1,
+      "avg_entry_price": 0.5451851851851852
+    },
+    {
+      "model_name": "HGBR_QUANTILE",
+      "trades": 57,
+      "days": 40,
+      "win_rate": 0.6140350877192983,
+      "net_pnl": 2.1599999999999993,
+      "sharpe": 0.07846853508709592,
+      "max_drawdown": -2.91,
+      "avg_entry_price": 0.5561403508771929
+    },
+    {
+      "model_name": "GUMBEL",
+      "trades": 46,
+      "days": 35,
+      "win_rate": 0.5652173913043478,
+      "net_pnl": 1.729999999999999,
+      "sharpe": 0.07424106727753663,
+      "max_drawdown": -2.43,
+      "avg_entry_price": 0.5076086956521739
+    }
+  ],
+  "scope": "Research-only rolling-origin model bakeoff; no live strategy code changed."
+}

@@ -617,6 +617,40 @@ separate forecast-vintage-aware model bakeoff.
 No live files or thresholds were changed. Treat the strict report-style policy
 as an in-sample paper/research candidate only.
 
+### Deep Research Report 8 Model Bakeoff
+
+`models/calibration_models.py` and `scripts/model_bakeoff_research.py` implement
+the valid research-only parts of
+`/Users/bhargavsukhavasi/Downloads/deep-research-report (8).md`: compare the
+current coherent Gumbel baseline against EMOS-style, random-forest empirical
+distribution, and HGBR quantile postprocessors.
+
+Generated outputs:
+- `data/research/model_bakeoff_predictions.csv`
+- `data/research/model_bakeoff_strategy_trades.csv`
+- `data/research/model_bakeoff_summary.json`
+- `reports/model_bakeoff_research.md`
+
+Latest run (`uv run python scripts/model_bakeoff_research.py`):
+- Scope: weekly rolling-origin validation, minimum 120 prior training days,
+  KXHIGHNY only, 53 evaluation days / 315 bracket rows.
+- Probability metrics: EMOS beat coherent Gumbel on this cached sample
+  (Brier 0.1104 vs 0.1329, binary log loss 0.4088 vs 0.5159, winner log loss
+  1.5936 vs 2.0267). All models preserved daily probability mass at 1.0000.
+- RF and HGBR did not beat EMOS or Gumbel probabilistically in this first
+  small-sample setup (RF winner log loss 4.2520; HGBR 3.8125).
+- Strategy overlay with 9AM price, 20pp edge, dead-zone exclusion, 25-75c side
+  price band, and lower-tail caution: Gumbel 46 trades / 56.5% win / +$1.73;
+  EMOS 27 trades / 70.4% win / +$3.74; RF 46 trades / 67.4% win / +$4.34;
+  HGBR 57 trades / 61.4% win / +$2.16.
+
+Interpretation: EMOS is now a valid offline/paper research candidate because it
+improved both probability metrics and small strategy-overlay win rate. RF had
+the highest overlay P&L in this narrow test but poor probability metrics, so do
+not trust it yet. HGBR needs more features/tuning before it is useful. None of
+these models are live-approved; the next step is a larger vintage-aware bakeoff
+and stress/fill testing before paper promotion.
+
 ---
 
 ## Kalshi Price Conventions
