@@ -564,6 +564,45 @@ policy, `config.py`, `main.py`, `event_triggers.py`, LaunchAgent, or execution
 code. Treat it as an in-sample paper/research candidate; live promotion still
 requires forecast-vintage-complete data and forward paper validation.
 
+### Deep Research Report 7 Policy Stress Backtest
+
+`scripts/report7_policy_stress_backtest.py` is a research-only validation pass
+for `/Users/bhargavsukhavasi/Downloads/deep-research-report (7).md`. The report
+mostly re-recommends paper-only controls that already exist in this repo:
+separate `config_paper.py`, TAIL_NO suspension, net-edge filtering, wing/central
+split, soft seasonal/regime sizing, and paper strategy health reporting.
+
+Generated outputs:
+- `data/research/report7_policy_stress_backtest.csv`
+- `data/research/report7_policy_stress_backtest_summary.json`
+- `reports/report7_policy_stress_backtest.md`
+
+Latest run (`uv run python scripts/report7_policy_stress_backtest.py`):
+- Current tradeable baseline (`CORE + DEEP_TAIL_NO`): 973 trades, 74.5% win,
+  +$55.77 maker-net at 0c stress, -$2.61 at +3c stress, -$40.28 at +5c stress.
+- Paper net-edge policy alone: 842 trades, 71.1% win, +$55.12 at 0c, +$4.60
+  at +3c, -$29.08 at +5c. Conclusion: net-edge gating improves stress
+  survival, but by itself does not improve win rate.
+- Soft seasonal/regime sizing variant: 842 trades, same 71.1% raw win rate,
+  +$58.21 sized net at 0c, +$26.18 at +3c, +$4.83 at +5c. Sizing changes
+  capital exposure, not alpha.
+- Strict report-style selection: 589 trades, 80.0% win, +$71.89 at 0c,
+  +$36.55 at +3c, +$12.99 at +5c. This is the only tested variant that
+  improved both win rate and severe stress survival.
+- Strict selection by sleeve: CORE 253 trades, 63.6% win, +$31.82 at 0c and
+  +$16.64 at +3c; DEEP_TAIL_NO 336 trades, 92.3% win, +$40.07 at 0c and
+  +$19.91 at +3c.
+
+Valid improvements from report 7: execution-stress policy testing, lower-tail
+caution, strict selection for marginal core rows, and soft seasonal/regime
+sizing as a bankroll-control layer. Not validated here: market-making,
+straddles, cross-market arbitrage, condor spreads, reinforcement learning,
+EMOS/QRF/HGBR retraining. Those need additional order-book/action data or a
+separate forecast-vintage-aware model bakeoff.
+
+No live files or thresholds were changed. Treat the strict report-style policy
+as an in-sample paper/research candidate only.
+
 ---
 
 ## Kalshi Price Conventions

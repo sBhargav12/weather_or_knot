@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-04-27T02:03:45",
+  "git_sha": "5348b7a",
+  "input": "data/backtest_results.csv",
+  "scope": "Research-only stress test for deep-research-report (7). No live files are modified.",
+  "policies": [
+    {
+      "policy": "current_strategy",
+      "win_rate_delta_pp": 0.0,
+      "trades": 973,
+      "days": 460,
+      "win_rate": 0.7451181911613566,
+      "net_pnl": 55.77000000000001,
+      "sharpe": 0.15225674934995287,
+      "max_drawdown": -16.850000000000012,
+      "avg_size_mult": 0.6357502569373074,
+      "avg_entry_price": 0.6778006166495375,
+      "net_0c": 55.77000000000001,
+      "net_1c": 36.30999999999999,
+      "net_3c": -2.610000000000035,
+      "net_5c": -40.280000000000044
+    },
+    {
+      "policy": "paper_net_edge_policy",
+      "win_rate_delta_pp": -3.3716765983209274,
+      "trades": 842,
+      "days": 438,
+      "win_rate": 0.7114014251781473,
+      "net_pnl": 55.12,
+      "sharpe": 0.16491687738391103,
+      "max_drawdown": -15.17000000000002,
+      "avg_size_mult": 0.6339845605700714,
+      "avg_entry_price": 0.6359382422802851,
+      "net_0c": 55.12,
+      "net_1c": 38.27999999999999,
+      "net_3c": 4.599999999999966,
+      "net_5c": -29.080000000000037
+    },
+    {
+      "policy": "paper_net_edge_sized",
+      "win_rate_delta_pp": -3.3716765983209274,
+      "trades": 842,
+      "days": 438,
+      "win_rate": 0.7114014251781473,
+      "net_pnl": 58.2131,
+      "sharpe": 0.26061521916874825,
+      "max_drawdown": -5.3548000000000044,
+      "avg_size_mult": 0.6339845605700714,
+      "avg_entry_price": 0.6359382422802851,
+      "net_0c": 58.2131,
+      "net_1c": 47.536799999999985,
+      "net_3c": 26.184199999999976,
+      "net_5c": 4.8315999999999795
+    },
+    {
+      "policy": "report7_lower_tail_caution",
+      "win_rate_delta_pp": -1.1872461857808658,
+      "trades": 761,
+      "days": 413,
+      "win_rate": 0.7332457293035479,
+      "net_pnl": 63.91,
+      "sharpe": 0.21662339747765144,
+      "max_drawdown": -11.599999999999994,
+      "avg_size_mult": 0.6393758212877793,
+      "avg_entry_price": 0.6392641261498029,
+      "net_0c": 63.91,
+      "net_1c": 48.68999999999998,
+      "net_3c": 18.24999999999997,
+      "net_5c": -12.190000000000037
+    },
+    {
+      "policy": "report7_strict_selection",
+      "win_rate_delta_pp": 5.454225026478943,
+      "trades": 589,
+      "days": 350,
+      "win_rate": 0.799660441426146,
+      "net_pnl": 71.89,
+      "sharpe": 0.3456504265647345,
+      "max_drawdown": -6.150000000000048,
+      "avg_size_mult": 0.6263200339558574,
+      "avg_entry_price": 0.6676061120543294,
+      "net_0c": 71.89,
+      "net_1c": 60.109999999999985,
+      "net_3c": 36.549999999999976,
+      "net_5c": 12.989999999999975
+    }
+  ],
+  "strict_policy_by_sleeve": [
+    {
+      "sleeve": "CORE",
+      "trades": 253,
+      "win_rate": 0.6363636363636364,
+      "net_0c": 31.819999999999997,
+      "net_3c": 16.639999999999993
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "trades": 336,
+      "win_rate": 0.9226190476190477,
+      "net_0c": 40.07,
+      "net_3c": 19.909999999999986
+    }
+  ],
+  "valid_report7_items": [
+    "Net-edge gate after fill/fee reserve",
+    "Wing/central and lower-tail split",
+    "Soft seasonal/regime sizing as research sizing, not a hard skip",
+    "Stress scenarios at +1c/+3c/+5c"
+  ],
+  "not_implemented": [
+    "Market-making, paired/straddle, cross-market arb, condor, and RL ideas need order-book/action data and are not validated here.",
+    "EMOS/QRF/HGBR retraining requires a separate vintage-aware model bakeoff."
+  ]
+}
