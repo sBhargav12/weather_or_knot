@@ -1,0 +1,134 @@
+{
+  "current": {
+    "trades": 973,
+    "win_rate": 0.7451181911613566,
+    "net_pnl": 49.239999999999974,
+    "avg_entry": 0.6778006166495375,
+    "avg_gap_abs": 25.9561513132231,
+    "avg_model_prob": 0.14535459987322116,
+    "avg_confidence": 55.54512846865365,
+    "sharpe": 0.13448396751009017,
+    "max_drawdown": -17.830000000000013,
+    "wins": 725,
+    "losses": 248,
+    "loss_net": -127.44000000000001
+  },
+  "all_saved": {
+    "trades": 1047,
+    "win_rate": 0.7239732569245463,
+    "net_pnl": 58.18999999999997,
+    "avg_entry": 0.6516332378223496,
+    "avg_gap_abs": 28.346465533792095,
+    "avg_model_prob": 0.14318613544938083,
+    "avg_confidence": 56.9159694364852,
+    "sharpe": 0.14560217883634236,
+    "max_drawdown": -18.040000000000006,
+    "wins": 758,
+    "losses": 289,
+    "loss_net": -137.94
+  },
+  "by_sleeve": [
+    {
+      "trades": 460,
+      "win_rate": 0.5760869565217391,
+      "net_pnl": 17.37999999999999,
+      "avg_entry": 0.5183043478260869,
+      "avg_gap_abs": 33.210069481325746,
+      "avg_model_prob": 0.30225447465262284,
+      "avg_confidence": 63.52339130434783,
+      "sharpe": 0.08138412192841706,
+      "max_drawdown": -17.04000000000001,
+      "sleeve": "CORE",
+      "losses": 195,
+      "wins": 265,
+      "loss_net": -93.5
+    },
+    {
+      "trades": 513,
+      "win_rate": 0.8966861598440545,
+      "net_pnl": 31.85999999999998,
+      "avg_entry": 0.8208187134502922,
+      "avg_gap_abs": 19.451663287244113,
+      "avg_model_prob": 0.004664653677266463,
+      "avg_confidence": 48.3911306042885,
+      "sharpe": 0.22628740242655965,
+      "max_drawdown": -10.41,
+      "sleeve": "DEEP_TAIL_NO",
+      "losses": 53,
+      "wins": 460,
+      "loss_net": -33.94
+    }
+  ],
+  "top_loss_modes": [
+    {
+      "sleeve": "CORE",
+      "loss_mode": "YES_loss_near_model_or_adjacent",
+      "trades": 57
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "NO_loss_bracket_hit",
+      "trades": 48
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "NO_loss_actual_hotter_than_model",
+      "trades": 40
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "YES_loss_actual_hotter_than_model",
+      "trades": 25
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "loss_mode": "NO_loss_cold_lower_tail_hit",
+      "trades": 25
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "NO_loss_cold_lower_tail_hit",
+      "trades": 13
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "loss_mode": "NO_loss_actual_hotter_than_model",
+      "trades": 13
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "loss_mode": "NO_loss_bracket_hit",
+      "trades": 7
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "loss_mode": "NO_loss_actual_colder_than_model",
+      "trades": 6
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "YES_loss_lower_tail_missed",
+      "trades": 5
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "NO_loss_hot_upper_tail_hit",
+      "trades": 3
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "NO_loss_actual_colder_than_model",
+      "trades": 2
+    },
+    {
+      "sleeve": "CORE",
+      "loss_mode": "YES_loss_actual_colder_than_model",
+      "trades": 2
+    },
+    {
+      "sleeve": "DEEP_TAIL_NO",
+      "loss_mode": "NO_loss_hot_upper_tail_hit",
+      "trades": 2
+    }
+  ]
+}

@@ -16,6 +16,7 @@ uv run ruff format .                 # format
 uv run python scripts/backtest.py --skip-fetch  # use cached CSVs
 uv run python scripts/backtest.py --refresh     # re-download Kalshi/IEM/Open-Meteo data
 uv run python scripts/strategy_variation_research.py  # research-only broad strategy/exit/sleeve sweep
+uv run python scripts/loss_analysis.py  # research-only loser/root-cause analysis
 
 # Run the pipeline (requires env vars below)
 .venv/bin/python main.py             # run indefinitely
@@ -228,6 +229,31 @@ Research-only findings:
 - Near-confirmed NO harvest had very high win rate but weak or negative net P&L because NO entries are near 99c and fees consume the 1c residual payout. This confirms it is not a direct Kalshi replacement for the aenews2 Polymarket-style confirmation trade.
 
 Main next research need: true forecast-vintage data and a fuller bid/ask/orderbook or own-order-log replay. Trade prints can test observed target/stop touches, but cannot prove passive maker fill probability.
+
+### Loss Analysis
+
+`scripts/loss_analysis.py` is a research-only root-cause analyzer for losing saved backtest trades. It reads `data/backtest_results.csv` and does not touch live code, `config.py`, paper policy, execution, `main.py`, or `event_triggers.py`.
+
+Generated outputs:
+- `data/research/loss_analysis_trades.csv`
+- `data/research/loss_analysis_factor_summary.csv`
+- `data/research/loss_analysis_improvement_tests.csv`
+- `data/research/loss_analysis_summary.json`
+- `reports/loss_analysis_report.md`
+
+Latest cached loss analysis (`2026-04-27`):
+- Current tradeable set (`CORE + DEEP_TAIL_NO`) had 973 trades, 725 wins, 248 losses, 74.5% win rate, +$49.24 net, and -$127.44 loss-side net.
+- `CORE`: 460 trades, 195 losses, 57.6% win rate, +$17.38 net, -$93.50 loss-side net.
+- `DEEP_TAIL_NO`: 513 trades, 53 losses, 89.7% win rate, +$31.86 net, -$33.94 loss-side net.
+- Core losses are mostly model/calibration misses: `YES_loss_near_model_or_adjacent` (57 trades, -$23.94), `NO_loss_bracket_hit` (48, -$25.02), and `NO_loss_actual_hotter_than_model` (40, -$23.43).
+- Deep-tail losses are rare but expensive; largest groups were lower-tail hits (25 trades, -$14.26) and actual-hotter-than-model central/upper misses (13, -$9.91).
+- January/December are historically weak in this cached backtest. A simple retrospective `drop_jan_dec` exclusion improved net from +$49.24 to +$69.39 and drawdown from -$17.83 to -$4.59, but this is not live-approved because it can overfit and should be paper-tested as soft scaling only.
+- Settlement/IEM mismatch rows are high-risk diagnostics: 44 current-tradeable rows with 38 losses and -$19.56 net. P&L still uses Kalshi labels, but mismatch flags identify days where reconstructed weather truth is unreliable.
+- Core wing-low/lower-tail is a weak pocket: 100 trades, 57.0% win rate, -$11.44; dropping only core wing-low improved net by +$2.21.
+- Core YES has lower win rate than core NO. Dropping core YES improved win rate but reduced net by -$3.01, so the answer is not simply "never trade YES"; it needs side-specific calibration/sizing.
+- Simple exclusion tests that improved historical net: drop Jan/Dec (+$20.15), drop settlement-mismatch rows (+$19.56), drop core confidence <60 (+$9.13), drop core entry 45-65c (+$6.30), drop core wing-low (+$2.21), require core gap >25pp (+$1.70). Treat all as research candidates requiring walk-forward/forward paper validation.
+
+Practical research implications: split calibration by side/sleeve, add a paper-only lower-tail caution flag, keep DEEP_TAIL_NO strict until stress-tested forward data supports loosening, log high model disagreement/high subset spread as potential skip diagnostics, and build true forecast-vintage rows plus post-entry path labels for every losing core trade.
 
 ---
 
