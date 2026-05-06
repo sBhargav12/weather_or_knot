@@ -10,7 +10,9 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=60)
+    conn.execute("PRAGMA busy_timeout = 60000")
+    conn.execute("PRAGMA journal_mode = WAL")
     c = conn.cursor()
 
     c.executescript(
@@ -60,6 +62,10 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             dsm_high_f REAL,
             cli_high_f REAL,
             caution_flag INTEGER DEFAULT 0,
+            anomaly INTEGER DEFAULT 0,
+            suspect_temp_json TEXT,
+            precision_level INTEGER,
+            wethr_high_wu_f REAL,
             raw_json TEXT
         );
 
@@ -82,6 +88,23 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             spread_cents REAL,
             volume INTEGER,
             open_interest INTEGER,
+            source TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS kalshi_orderbook_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ticker TEXT NOT NULL,
+            city TEXT NOT NULL,
+            sequence INTEGER,
+            yes_bid TEXT,
+            yes_ask TEXT,
+            no_bid TEXT,
+            no_ask TEXT,
+            spread TEXT,
+            spread_cents REAL,
+            yes_bids_json TEXT,
+            no_bids_json TEXT,
             source TEXT
         );
 
@@ -162,6 +185,9 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             stake_dollars REAL,
             entry_time TEXT,
             entry_price REAL,
+            target_price REAL,
+            stop_price REAL,
+            never_hold_above REAL,
             exit_time TEXT,
             exit_price REAL,
             exit_reason TEXT,
@@ -231,6 +257,30 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             official_high_f REAL,
             official_low_f REAL,
             raw_json TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS precipitation_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station TEXT NOT NULL,
+            date TEXT NOT NULL,
+            precip_today_in REAL,
+            official_mtd_in REAL,
+            has_trace INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(station, date)
+        );
+
+        CREATE TABLE IF NOT EXISTS model_accuracy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station TEXT NOT NULL,
+            model TEXT NOT NULL,
+            mae REAL,
+            bias REAL,
+            rmse REAL,
+            n INTEGER,
+            window_days INTEGER DEFAULT 7,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(station, model, window_days)
         );
 
         CREATE TABLE IF NOT EXISTS performance_daily (
@@ -311,10 +361,58 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
             notes TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS live_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            signal_id INTEGER,
+            city TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            target_date TEXT,
+            bracket TEXT,
+            direction TEXT,
+            contracts INTEGER DEFAULT 1,
+            stake_dollars REAL,
+            entry_time TEXT,
+            entry_price REAL,
+            order_id TEXT,
+            order_status TEXT DEFAULT 'pending',
+            filled_count INTEGER DEFAULT 0,
+            fill_price REAL,
+            exit_time TEXT,
+            exit_price REAL,
+            exit_reason TEXT,
+            exit_order_id TEXT,
+            exit_order_status TEXT,
+            gross_pnl REAL,
+            maker_fee_entry REAL,
+            maker_fee_exit REAL,
+            net_pnl_maker REAL,
+            slippage_estimate REAL,
+            settlement_temp_f REAL,
+            settled_correct INTEGER,
+            strategy_sleeve TEXT DEFAULT 'CORE_HGEFS_EMOS',
+            candidate_status TEXT,
+            policy_reason TEXT,
+            raw_edge_pp REAL,
+            est_net_edge_pp REAL,
+            seasonal_mult REAL,
+            regime_mult REAL,
+            final_size_mult REAL,
+            FOREIGN KEY (signal_id) REFERENCES signals(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_live_trades_date ON live_trades(target_date);
+        CREATE INDEX IF NOT EXISTS idx_live_trades_order ON live_trades(order_id);
+
         CREATE INDEX IF NOT EXISTS idx_model_runs_city_date ON model_runs(city, target_date);
         CREATE INDEX IF NOT EXISTS idx_metar_station_time ON metar_observations(station, observation_time);
         CREATE INDEX IF NOT EXISTS idx_kalshi_ticker_time ON kalshi_prices(ticker, created_at);
+        CREATE INDEX IF NOT EXISTS idx_kalshi_prices_created_at ON kalshi_prices(created_at);
+        CREATE INDEX IF NOT EXISTS idx_kalshi_prices_source_time ON kalshi_prices(source, created_at);
+        CREATE INDEX IF NOT EXISTS idx_kalshi_orderbook_ticker_time ON kalshi_orderbook_snapshots(ticker, created_at);
+        CREATE INDEX IF NOT EXISTS idx_kalshi_orderbook_created_at ON kalshi_orderbook_snapshots(created_at);
         CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_signals_date_sleeve ON signals(created_at, strategy_sleeve);
         CREATE INDEX IF NOT EXISTS idx_paper_trades_date ON paper_trades(target_date);
         CREATE INDEX IF NOT EXISTS idx_teleconn_date ON teleconnections(date);
         CREATE INDEX IF NOT EXISTS idx_dsm_city_date ON dsm_reports(city, dsm_date);
@@ -322,6 +420,61 @@ def create_database(db_path: str = "data/pipeline.db") -> None:
         """
     )
 
+    # Lightweight additive migrations for existing local/Oracle databases.
+    for column, column_type in {
+        "target_price": "REAL",
+        "stop_price": "REAL",
+        "never_hold_above": "REAL",
+    }.items():
+        try:
+            c.execute(f"ALTER TABLE paper_trades ADD COLUMN {column} {column_type}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+    for column, column_type in {
+        "anomaly": "INTEGER DEFAULT 0",
+        "suspect_temp_json": "TEXT",
+        "precision_level": "INTEGER",
+        "wethr_high_wu_f": "REAL",
+    }.items():
+        try:
+            c.execute(f"ALTER TABLE metar_observations ADD COLUMN {column} {column_type}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+    for ddl in [
+        """CREATE TABLE IF NOT EXISTS precipitation_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station TEXT NOT NULL,
+            date TEXT NOT NULL,
+            precip_today_in REAL,
+            official_mtd_in REAL,
+            has_trace INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(station, date)
+        )""",
+        """CREATE TABLE IF NOT EXISTS model_accuracy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station TEXT NOT NULL,
+            model TEXT NOT NULL,
+            mae REAL,
+            bias REAL,
+            rmse REAL,
+            n INTEGER,
+            window_days INTEGER DEFAULT 7,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(station, model, window_days)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_precip_station_date ON precipitation_cache(station, date)",
+        "CREATE INDEX IF NOT EXISTS idx_model_accuracy_station ON model_accuracy(station, model)",
+    ]:
+        try:
+            c.execute(ddl)
+        except sqlite3.OperationalError as exc:
+            if "already exists" not in str(exc).lower():
+                raise
     conn.commit()
     conn.close()
     print(f"Database created/verified at {db_path}")

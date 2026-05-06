@@ -72,6 +72,12 @@ class WethrClient:
             {"station_code": station, "mode": "wethr_high", "logic": logic},
         )
 
+    def get_wethr_high_wu(self, station: str) -> dict:
+        return self._get(
+            "observations.php",
+            {"station_code": station, "mode": "wethr_high", "logic": "wu"},
+        )
+
     def get_dsm_high(self, station: str) -> dict:
         return self._get(
             "observations.php",
@@ -137,9 +143,27 @@ class WethrClient:
         self._last_nws_versions[station] = version
         return old is not None and version > old
 
+    def get_precipitation(self, station: str) -> dict:
+        data = self._get("precipitation.php", {"station_code": station})
+        return data if isinstance(data, dict) else {}
+
+    def get_model_accuracy(self, station: str, window_days: int = 7) -> list:
+        """Requires Developer tier. Returns empty list on 403 (Pro tier)."""
+        try:
+            data = self._get(
+                "model_accuracy.php",
+                {"station_code": station, "window_days": window_days},
+            )
+            return data if isinstance(data, list) else []
+        except RuntimeError as exc:
+            if "403" in str(exc) or "401" in str(exc):
+                logger.debug("model_accuracy API requires Developer tier (got auth error)")
+                return []
+            raise
+
     def get_all_models_maxt(self, station: str, target_date_et: str) -> dict:
         result = {}
-        for model in ["HRRR", "NBM", "GFS", "ECMWF", "NAM", "ICON", "UKMO", "ARPEGE", "JMA"]:
+        for model in ["HRRR", "NBM", "GFS", "ECMWF", "NAM", "ICON", "UKMO", "ARPEGE", "JMA", "RAP", "GFS-MOS", "NBM-MOS"]:
             try:
                 maxt = self.get_forecast_maxt(station, model, target_date_et)
                 if maxt is not None:

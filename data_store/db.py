@@ -13,8 +13,10 @@ class Database:
         self._columns_cache: Dict[str, set] = {}
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA journal_mode = WAL")
         return conn
 
     @staticmethod
@@ -56,6 +58,9 @@ class Database:
     def insert_kalshi_price(self, data: Dict[str, Any]) -> int:
         return self._insert("kalshi_prices", data)
 
+    def insert_kalshi_orderbook_snapshot(self, data: Dict[str, Any]) -> int:
+        return self._insert("kalshi_orderbook_snapshots", data)
+
     def insert_gate_check(self, data: Dict[str, Any]) -> int:
         return self._insert("gate_checks", data)
 
@@ -74,8 +79,84 @@ class Database:
     def insert_cli_report(self, data: Dict[str, Any]) -> int:
         return self._insert("cli_reports", data)
 
+    def upsert_precipitation_cache(self, data: Dict[str, Any]) -> int:
+        columns = self._table_columns("precipitation_cache")
+        payload = {
+            k: self._normalise_value(v)
+            for k, v in data.items()
+            if k in columns and v is not None
+        }
+        if not payload:
+            raise ValueError("No insertable fields for precipitation_cache")
+        names = list(payload)
+        placeholders = ", ".join("?" for _ in names)
+        updates = ", ".join(
+            f"{n}=excluded.{n}" for n in names if n not in ("station", "date")
+        )
+        sql = (
+            f"INSERT INTO precipitation_cache ({', '.join(names)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(station, date) DO UPDATE SET {updates}"
+        )
+        return self.execute_write(sql, tuple(payload[n] for n in names))
+
+    def get_precipitation_today(self, station: str, date: str) -> Optional[dict]:
+        rows = self.execute(
+            "SELECT * FROM precipitation_cache WHERE station = ? AND date = ? LIMIT 1",
+            (station, date),
+        )
+        return dict(rows[0]) if rows else None
+
+    def upsert_model_accuracy(self, data: Dict[str, Any]) -> int:
+        columns = self._table_columns("model_accuracy")
+        payload = {
+            k: self._normalise_value(v)
+            for k, v in data.items()
+            if k in columns and v is not None
+        }
+        names = list(payload)
+        placeholders = ", ".join("?" for _ in names)
+        updates = ", ".join(
+            f"{n}=excluded.{n}" for n in names if n not in ("station", "model", "window_days")
+        )
+        sql = (
+            f"INSERT INTO model_accuracy ({', '.join(names)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(station, model, window_days) DO UPDATE SET {updates}"
+        )
+        return self.execute_write(sql, tuple(payload[n] for n in names))
+
+    def get_model_accuracy(self, station: str, window_days: int = 7) -> List[dict]:
+        rows = self.execute(
+            "SELECT * FROM model_accuracy WHERE station = ? AND window_days = ? ORDER BY mae ASC",
+            (station, window_days),
+        )
+        return [dict(r) for r in rows]
+
     def insert_candidate_signal(self, data: Dict[str, Any]) -> int:
         return self._insert("candidate_signals", data)
+
+    def insert_live_trade(self, data: Dict[str, Any]) -> int:
+        return self._insert("live_trades", data)
+
+    def update_live_trade(self, trade_id: int, data: Dict[str, Any]) -> None:
+        columns = self._table_columns("live_trades")
+        payload = {
+            k: self._normalise_value(v)
+            for k, v in data.items()
+            if k in columns and v is not None
+        }
+        if not payload:
+            return
+        sets = ", ".join(f"{k} = ?" for k in payload)
+        self.execute_write(
+            f"UPDATE live_trades SET {sets} WHERE id = ?",
+            (*payload.values(), trade_id),
+        )
+
+    def get_open_live_trades(self) -> List[dict]:
+        rows = self.execute(
+            "SELECT * FROM live_trades WHERE exit_time IS NULL ORDER BY created_at"
+        )
+        return [dict(row) for row in rows]
 
     def update_daily_performance(self, date: str, data: Dict[str, Any]) -> int:
         payload = {"date": date, **data}
@@ -110,6 +191,48 @@ class Database:
             (station,),
         )
         return dict(rows[0]) if rows else None
+
+    def get_latest_metar_with_six_hour(self, station: str) -> tuple[Optional[float], Optional[float]]:
+        """Return (temp_f, six_hour_high_f) from the most recent METAR observation."""
+        rows = self.execute(
+            """
+            SELECT temp_f, six_hour_high_f FROM metar_observations
+            WHERE station = ? AND obs_type = 'METAR' AND temp_f IS NOT NULL
+            ORDER BY observation_time DESC, created_at DESC
+            LIMIT 1
+            """,
+            (station,),
+        )
+        if not rows:
+            return None, None
+        return rows[0]["temp_f"], rows[0]["six_hour_high_f"]
+
+    def get_latest_cli_from_metar(self, station: str) -> Optional[dict]:
+        """Return CLI settlement data from the most recent stored METAR that has it."""
+        rows = self.execute(
+            """
+            SELECT cli_high_f, raw_json FROM metar_observations
+            WHERE station = ? AND cli_high_f IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (station,),
+        )
+        if not rows:
+            return None
+        raw = rows[0]["raw_json"]
+        parsed = {}
+        try:
+            import json as _json
+            parsed = _json.loads(raw) if raw else {}
+        except Exception:
+            pass
+        return {
+            "cli_high_f": rows[0]["cli_high_f"],
+            "cli_low_f": parsed.get("cli_low_f"),
+            "cli_received_at": parsed.get("cli_received_at"),
+            "raw_json": raw,
+        }
 
     def get_wethr_high_today(self, station: str) -> Optional[float]:
         rows = self.execute(
