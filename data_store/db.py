@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
+from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
@@ -130,6 +132,49 @@ class Database:
             (station, window_days),
         )
         return [dict(r) for r in rows]
+
+    def compute_local_model_accuracy(self, min_days: int = 20) -> List[dict]:
+        """Compute per-model MAE/bias/RMSE from model_runs joined with cli_reports.
+
+        Uses all WETHR_CONSENSUS rows (excluding KXLOWT* TMIN cities) joined against
+        official CLI settlement highs. Returns records sorted by MAE ascending.
+        """
+        rows = self.execute(
+            """
+            SELECT mr.raw_data_json, cr.official_high_f
+            FROM model_runs mr
+            JOIN cli_reports cr
+              ON mr.city = cr.city AND mr.target_date = cr.settlement_date
+            WHERE mr.model = 'WETHR_CONSENSUS'
+              AND cr.official_high_f IS NOT NULL
+              AND mr.city NOT LIKE 'KXLOWT%'
+            ORDER BY mr.target_date DESC
+            """
+        )
+
+        model_errors: Dict[str, List] = defaultdict(list)
+        for row in rows:
+            actual = float(row["official_high_f"])
+            try:
+                d = json.loads(row["raw_data_json"] or "{}")
+            except Exception:
+                continue
+            for model, forecast in d.items():
+                if forecast is not None:
+                    model_errors[model.upper()].append((float(forecast), actual))
+
+        results = []
+        for model, pairs in model_errors.items():
+            n = len(pairs)
+            if n < min_days:
+                continue
+            errors = [f - a for f, a in pairs]
+            mae = sum(abs(e) for e in errors) / n
+            bias = sum(errors) / n
+            rmse = math.sqrt(sum(e ** 2 for e in errors) / n)
+            results.append({"model": model, "mae": round(mae, 3), "bias": round(bias, 3), "rmse": round(rmse, 3), "n": n})
+
+        return sorted(results, key=lambda x: x["mae"])
 
     def insert_candidate_signal(self, data: Dict[str, Any]) -> int:
         return self._insert("candidate_signals", data)

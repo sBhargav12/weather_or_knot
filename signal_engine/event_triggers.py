@@ -78,6 +78,17 @@ class EventTriggerEngine:
             WeatherMemoryLog(db) if _cp.PAPER_WEATHER_MEMORY_ENABLED else None
         )
         self.stream_client = None
+        # Load any previously computed accuracy weights from DB so they apply immediately
+        try:
+            existing = db.compute_local_model_accuracy(min_days=20)
+            if existing:
+                weights = {r["model"]: 1.0 / r["mae"] for r in existing if r["mae"] > 0}
+                total = sum(weights.values())
+                weights = {m: w / total for m, w in weights.items()}
+                biases = {r["model"]: r["bias"] for r in existing}
+                self.gumbel.update_dynamic_weights(weights, biases)
+        except Exception as _acc_exc:
+            logger.debug("Could not pre-load model accuracy weights: %s", _acc_exc)
 
     async def run_forever(self) -> None:
         await asyncio.gather(
@@ -294,24 +305,51 @@ class EventTriggerEngine:
                 logger.warning("Precipitation refresh failed for %s: %s", city, exc)
 
     async def _refresh_model_accuracy(self) -> None:
+        try:
+            rows = self.db.compute_local_model_accuracy(min_days=20)
+        except Exception as exc:
+            logger.warning("Local model accuracy computation failed: %s", exc)
+            rows = []
+
+        if rows:
+            for row in rows:
+                self.db.upsert_model_accuracy({
+                    "station": "ALL",
+                    "model": row["model"],
+                    "mae": row["mae"],
+                    "bias": row["bias"],
+                    "rmse": row["rmse"],
+                    "n": row["n"],
+                    "window_days": 0,
+                })
+            import numpy as _np
+            weights = {r["model"]: 1.0 / r["mae"] for r in rows if r["mae"] > 0}
+            total = sum(weights.values())
+            weights = {m: w / total for m, w in weights.items()}
+            biases = {r["model"]: r["bias"] for r in rows}
+            self.gumbel.update_dynamic_weights(weights, biases)
+            logger.info(
+                "Model accuracy refresh: %d models, best=%s MAE=%.2f bias=%.2f°F",
+                len(rows), rows[0]["model"], rows[0]["mae"], rows[0]["bias"],
+            )
+
+        # Also try wethr API (Developer tier) — silently no-ops on Pro
         for city, cfg in self._active_cities():
             station = cfg["wethr_station"]
             try:
-                rows = self.wethr.get_model_accuracy(station, window_days=7)
-                for row in rows:
+                api_rows = self.wethr.get_model_accuracy(station, window_days=7)
+                for r in api_rows:
                     self.db.upsert_model_accuracy({
                         "station": station,
-                        "model": row.get("model"),
-                        "mae": row.get("mae"),
-                        "bias": row.get("bias"),
-                        "rmse": row.get("rmse"),
-                        "n": row.get("n"),
+                        "model": r.get("model"),
+                        "mae": r.get("mae"),
+                        "bias": r.get("bias"),
+                        "rmse": r.get("rmse"),
+                        "n": r.get("n"),
                         "window_days": 7,
                     })
-                if rows:
-                    logger.info("Stored model accuracy for %s: %d models", station, len(rows))
-            except Exception as exc:
-                logger.debug("Model accuracy refresh failed for %s: %s", city, exc)
+            except Exception:
+                pass
 
     async def check_cli_settlements(self) -> None:
         today_dt = datetime.now(ZoneInfo("America/New_York")).date()

@@ -15,6 +15,18 @@ class GumbelModel:
     def __init__(self):
         self.calibrator = None
         self.calibration_data = []
+        self._dynamic_weights: Dict[str, float] = {}
+        self._dynamic_biases: Dict[str, float] = {}
+
+    def update_dynamic_weights(self, weights: Dict[str, float], biases: Dict[str, float]) -> None:
+        self._dynamic_weights = {k.upper(): v for k, v in weights.items()}
+        self._dynamic_biases = {k.upper(): v for k, v in biases.items()}
+        top = sorted(weights.items(), key=lambda x: -x[1])[:5]
+        import logging
+        logging.getLogger(__name__).info(
+            "Dynamic model weights updated (top 5): %s",
+            ", ".join(f"{m}={w:.3f}" for m, w in top),
+        )
 
     def compute_bracket_prob(
         self,
@@ -90,32 +102,40 @@ class GumbelModel:
         return float(self.calibrator.predict(np.array([raw_prob], dtype=float))[0])
 
     def compute_consensus_from_wethr(self, model_forecasts: Dict[str, float], target_date: Optional[str] = None) -> Optional[float]:
-        corrected = []
-        weighted = []
+        use_dynamic = bool(self._dynamic_weights)
         month = None
         if target_date:
             month = datetime.strptime(target_date, "%Y-%m-%d").month
+        corrected = []
+        weighted = []
         for model, value in model_forecasts.items():
             if value is None:
                 continue
             model_upper = model.upper()
             adjusted = float(value)
-            if model_upper == "ECMWF":
-                adjusted -= config.ECMWF_BIAS
-            elif model_upper == "GFS":
-                adjusted -= config.GFS_BIAS
-            elif model_upper == "HRRR" and month in (6, 7, 8):
-                adjusted += config.HRRR_SUMMER_BIAS
+            if use_dynamic:
+                adjusted -= self._dynamic_biases.get(model_upper, 0.0)
+            else:
+                if model_upper == "ECMWF":
+                    adjusted -= config.ECMWF_BIAS
+                elif model_upper == "GFS":
+                    adjusted -= config.GFS_BIAS
+                elif model_upper == "HRRR" and month in (6, 7, 8):
+                    adjusted += config.HRRR_SUMMER_BIAS
             corrected.append(adjusted)
-            weight = config.FALLBACK_ENSEMBLE_WEIGHTS.get(model_upper)
+            weight = (
+                self._dynamic_weights.get(model_upper)
+                if use_dynamic
+                else config.FALLBACK_ENSEMBLE_WEIGHTS.get(model_upper)
+            )
             if weight is not None:
                 weighted.append((adjusted, float(weight)))
         if not corrected:
             return None
         if weighted:
-            total_weight = sum(weight for _, weight in weighted)
+            total_weight = sum(w for _, w in weighted)
             if total_weight > 0:
-                return float(sum(value * weight for value, weight in weighted) / total_weight)
+                return float(sum(v * w for v, w in weighted) / total_weight)
         return float(np.mean(corrected))
 
     def compute_all_bracket_probs(
