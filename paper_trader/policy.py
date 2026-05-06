@@ -4,8 +4,8 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Any
 
-import config_paper
-from execution.fill_model import HALF_SPREADS
+from paper_trader import config_paper
+from execution.fill_model import half_spread_for_price
 from execution.fill_model import kalshi_fee
 
 
@@ -133,20 +133,20 @@ def estimate_execution_cost_pp(signal: dict) -> float:
     """
     family = bracket_family(signal)
     sleeve = canonical_sleeve(signal)
-    fallback = HALF_SPREADS.get(family, HALF_SPREADS["central"]) * 100.0
+    try:
+        entry_price_for_spread = float(signal.get("entry_price", signal.get("market_price", 0.50)))
+    except (TypeError, ValueError):
+        entry_price_for_spread = 0.50
+    atlas_half_spread = half_spread_for_price(entry_price_for_spread, family) * 100.0
     spread = signal.get("spread")
-    spread_reserve = fallback
+    spread_reserve = atlas_half_spread
     if spread is not None:
         try:
             spread_reserve = max(0.0, float(spread) * 50.0)
         except (TypeError, ValueError):
             pass
 
-    try:
-        entry_price = float(signal.get("entry_price", signal.get("market_price", 0.50)))
-    except (TypeError, ValueError):
-        entry_price = 0.50
-    maker_fee_pp = kalshi_fee(min(max(entry_price, 0.01), 0.99), 1, "maker") * 100.0
+    maker_fee_pp = kalshi_fee(min(max(entry_price_for_spread, 0.01), 0.99), 1, "maker") * 100.0
 
     if sleeve == "CORE":
         stress_buffer = float(config_paper.PAPER_CORE_STRESS_BUFFER_PP)

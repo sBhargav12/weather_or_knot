@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bhargavsukhavasi.kalshi-a1-capacity-loop</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bhargavsukhavasi/prediction-market-analysis/deploy/oracle/a1_capacity_loop.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/bhargavsukhavasi/prediction-market-analysis</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/bhargavsukhavasi/prediction-market-analysis/logs/a1-capacity-loop.launchd.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/bhargavsukhavasi/prediction-market-analysis/logs/a1-capacity-loop.launchd.err</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>A1_OCPUS</key>
+    <string>2</string>
+    <key>A1_MEMORY_GB</key>
+    <string>12</string>
+    <key>A1_RETRY_SECONDS</key>
+    <string>120</string>
+  </dict>
+</dict>
+</plist>

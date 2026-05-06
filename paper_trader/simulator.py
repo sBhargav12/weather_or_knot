@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from zoneinfo import ZoneInfo
 
 import config
+from dashboard.notifications import format_trade_entry, format_trade_exit, notify_phone
 from data_store.db import Database
 from paper_trader.policy import PaperPolicyDecision, paper_policy_allows_trade
 
@@ -21,12 +22,16 @@ class PaperTrader:
         self.bankroll = float(starting_bankroll)
         self.starting_bankroll = float(starting_bankroll)
         self.db = Database(db_path)
-        self.open_trades: Dict[int, dict] = {}
+        self.open_trades: Dict[int, dict] = {
+            int(trade["id"]): trade for trade in self.db.get_open_trades()
+        }
 
     def on_signal(self, signal: dict) -> Optional[dict]:
         policy = paper_policy_allows_trade(signal)
         self._log_policy_candidate(signal, policy)
         if not policy.allowed:
+            return None
+        if self._has_matching_open_trade(signal):
             return None
 
         direction = signal.get("direction", "YES")
@@ -56,6 +61,17 @@ class PaperTrader:
             policy=policy,
         )
         return trade
+
+    def _has_matching_open_trade(self, signal: dict) -> bool:
+        ticker = signal.get("ticker")
+        direction = signal.get("direction", "YES")
+        sleeve = signal.get("strategy_sleeve", "CORE_HGEFS_GUMBEL")
+        return any(
+            trade.get("ticker") == ticker
+            and trade.get("direction") == direction
+            and trade.get("strategy_sleeve") == sleeve
+            for trade in self.open_trades.values()
+        )
 
     def calculate_position_size(
         self,
@@ -162,6 +178,7 @@ class PaperTrader:
         trade["id"] = trade_id
         self.open_trades[trade_id] = trade
         self.bankroll -= sizing["stake"] + maker_fee_entry
+        notify_phone("Paper trade entered", format_trade_entry(trade), priority="high", tags="chart_with_upwards_trend")
         return trade
 
     def _log_policy_candidate(self, signal: dict, policy: PaperPolicyDecision) -> None:
@@ -199,15 +216,18 @@ class PaperTrader:
 
     def check_exits(self, current_prices: dict, dsm_detected: bool = False) -> None:
         for trade_id, trade in list(self.open_trades.items()):
-            current = current_prices.get(trade["ticker"])
-            if current is None:
+            current_yes = current_prices.get(trade["ticker"])
+            if current_yes is None:
                 continue
-            current_price = float(current)
+            current_price = self.current_side_price(trade, current_yes)
             entry = float(trade["entry_price"])
             reason = None
             exit_price = current_price
             if dsm_detected:
                 reason = "DSM_CANCEL"
+            elif current_price >= float(config.NEVER_HOLD_ABOVE):
+                reason = "NEVER_HOLD_ABOVE"
+                exit_price = float(config.NEVER_HOLD_ABOVE)
             elif current_price >= float(config.TARGET_EXIT_PRICE):
                 reason = "TARGET"
                 exit_price = float(config.TARGET_EXIT_PRICE)
@@ -217,6 +237,14 @@ class PaperTrader:
                 reason = "TIME_LIMIT"
             if reason:
                 self._exit_trade(trade_id, exit_price, reason)
+
+    @staticmethod
+    def current_side_price(trade: dict, current_yes_price: float) -> float:
+        """Convert latest YES price into the side price for the held paper leg."""
+        current_yes = float(current_yes_price)
+        if trade.get("direction") == "NO":
+            return round(max(0.0, min(1.0, 1.0 - current_yes)), 4)
+        return current_yes
 
     def _past_max_hold_time(self) -> bool:
         now = datetime.now(ZoneInfo("America/New_York")).time()
@@ -256,6 +284,7 @@ class PaperTrader:
                 trade_id,
             ),
         )
+        notify_phone("Paper trade exited", format_trade_exit(trade, exit_price, reason, net_maker), priority="high", tags="moneybag")
 
     def settle_trade(self, trade: dict, settlement_temp_f: float) -> None:
         correct = self._direction_correct(trade, settlement_temp_f)

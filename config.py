@@ -8,6 +8,8 @@ from decimal import Decimal
 KALSHI_API_KEY = os.environ.get("KALSHI_API_KEY", "")
 KALSHI_KEY_PATH = os.environ.get("KALSHI_KEY_PATH", "")
 WETHR_API_KEY = os.environ.get("WETHR_API_KEY", "")
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
+NTFY_URL = os.environ.get("NTFY_URL", "https://ntfy.sh")
 
 # API endpoints
 KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
@@ -141,6 +143,7 @@ FALLBACK_ENTRY_ET = "11:00"
 DAILY_REPORT_TIME_ET = "08:00"
 CLI_CHECK_TIME_ET = "07:00"
 TELECONN_UPDATE_ET = "06:00"
+TRADE_TARGET_DAYS_AHEAD = 1
 
 POLL_INTERVAL_60S = 60
 POLL_INTERVAL_5MIN = 300

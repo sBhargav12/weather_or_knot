@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -327,6 +328,9 @@ class ModelFetcher:
             "run_time": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {cycle}:00:00",
             "source_file": filename,
         }
+        forecast_date = self._parse_forecast_date_from_block(station_block, date_str)
+        if forecast_date:
+            result["forecast_date"] = forecast_date
 
         # Real probabilistic percentiles (blend_nbptx)
         mapping = {"TXNP1": "p10", "TXNP2": "p25", "TXNP5": "p50", "TXNP7": "p75", "TXNP9": "p90"}
@@ -348,8 +352,6 @@ class ModelFetcher:
         txn_values = self._first_numeric_values(station_block, "TXN")
         xnd_values = self._first_numeric_values(station_block, "XND")
         if txn_values:
-            # The first TXN value at 6-hourly cycle covers today's afternoon
-            # high (FHR 18 from 06Z = 12Z–00Z local, i.e. 8am–8pm ET daytime max).
             p50 = float(txn_values[0])
             spread = float(xnd_values[0]) if xnd_values else 2.0
             result.update(
@@ -367,6 +369,64 @@ class ModelFetcher:
         return None
 
     @staticmethod
+    def _parse_forecast_date_from_block(station_block: list, run_date_str: str) -> Optional[str]:
+        """Extract the first forecast target date from an NBM bulletin station block.
+
+        Handles blend_nbptx (VALID MM/DD/YYYY line) and blend_nbetx/blend_nbstx
+        (date column header like "MAY  6 |" or "WED  6/").
+        Returns ISO date string or None if the date cannot be determined.
+        """
+        _MONTH_MAP = {
+            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+            "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+        }
+        run_year = int(run_date_str[:4])
+        run_month = int(run_date_str[4:6])
+        run_date = date(run_year, run_month, int(run_date_str[6:8]))
+
+        for line in station_block[1:]:
+            upper = line.upper()
+
+            # blend_nbptx: "VALID   05/06/2026" or "VALID   05/06/2026 12Z TO ..."
+            m = re.search(r"VALID\s+(\d{1,2})/(\d{1,2})/(\d{4})", upper)
+            if m:
+                try:
+                    d = date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+                    if 0 <= (d - run_date).days <= 14:
+                        return d.isoformat()
+                except ValueError:
+                    pass
+                continue
+
+            # blend_nbetx column header: "      MAY  6 |     7 |" or "MAY  6/MAY  7/"
+            # Skip lines that contain the 4-digit run year (those are the station header).
+            if re.search(r"\b" + str(run_year) + r"\b", upper):
+                continue
+            for mo_abbr, mo_num in _MONTH_MAP.items():
+                m = re.search(rf"\b{mo_abbr}\s+(\d{{1,2}})\b", upper)
+                if m:
+                    day = int(m.group(1))
+                    year = run_year if mo_num >= run_month else run_year + 1
+                    try:
+                        d = date(year, mo_num, day)
+                        if 0 <= (d - run_date).days <= 14:
+                            return d.isoformat()
+                    except ValueError:
+                        pass
+                    break  # found a month token on this line; move to next line
+
+            # Day-of-week + day number: "WED  6/" or "WED 06 |"
+            m = re.search(r"\b(?:MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\b", upper)
+            if m:
+                day = int(m.group(1))
+                for delta in range(15):
+                    candidate = run_date + timedelta(days=delta)
+                    if candidate.day == day:
+                        return candidate.isoformat()
+
+        return None
+
+    @staticmethod
     def _first_numeric_values(lines: list, token: str) -> list:
         for line in lines:
             parts = line.replace("|", " ").split()
@@ -379,3 +439,108 @@ class ModelFetcher:
                         continue
                 return values
         return []
+
+
+# ── NWS Hourly Forecast — remaining-day temperature ceiling ────────────────
+
+# NWS API gridpoints for each city (office/x/y from api.weather.gov/points/{lat,lon})
+_NWS_GRIDPOINTS: dict[str, str] = {
+    "KNYC": "OKX/34,45",   # Central Park — verified 2026-05-05
+    "KMDW": "LOT/76,72",
+    "KMIA": "MFL/110,37",
+    "KAUS": "EWX/154,91",
+    "KLAX": "LOX/150,48",
+    "KDEN": "BOU/59,68",
+    "KPHL": "PHI/49,76",
+}
+
+_NWS_HEADERS = {
+    "User-Agent": "kalshi-weather-bot/1.0 (bhargavsukhavasi12@gmail.com)",
+    "Accept": "application/geo+json",
+}
+
+_STATION_TZ: dict[str, str] = {
+    "KNYC": "America/New_York",
+    "KMDW": "America/Chicago",
+    "KMIA": "America/New_York",
+    "KAUS": "America/Chicago",
+    "KLAX": "America/Los_Angeles",
+    "KDEN": "America/Denver",
+    "KPHL": "America/New_York",
+}
+
+
+def fetch_nws_remaining_max_f(
+    station: str,
+    as_of_dt: datetime | None = None,
+    lookahead_hours: int = 6,
+    timeout: int = 10,
+    wethr_client=None,
+) -> float | None:
+    """Return the maximum forecasted temperature (°F) remaining today.
+
+    Prefers wethr hourly_temps (nws_forecasts.php) when wethr_client is provided.
+    Falls back to NWS Hourly Forecast API (api.weather.gov/gridpoints).
+    """
+    if as_of_dt is None:
+        as_of_dt = datetime.now(UTC)
+
+    if wethr_client is not None:
+        try:
+            nws_data = wethr_client.get_nws_evolution(station)
+            hourly_temps = nws_data.get("hourly_temps") or []
+            if hourly_temps:
+                tz_name = _STATION_TZ.get(station, "America/New_York")
+                from zoneinfo import ZoneInfo
+                local_dt = as_of_dt.astimezone(ZoneInfo(tz_name))
+                current_hour = local_dt.hour
+                remaining = [
+                    float(t)
+                    for t in hourly_temps[current_hour + 1 : 24]
+                    if t is not None
+                ]
+                if remaining:
+                    result = max(remaining)
+                    logger.debug(
+                        "wethr hourly_temps remaining max for %s: %.1f°F (hours %d-23)",
+                        station, result, current_hour + 1,
+                    )
+                    return result
+        except Exception as exc:
+            logger.warning("wethr hourly_temps fetch failed for %s: %s — falling back to NWS", station, exc)
+
+    # NWS Gridpoints fallback
+    gridpoint = _NWS_GRIDPOINTS.get(station)
+    if not gridpoint:
+        logger.debug("NWS gridpoint not configured for station %s", station)
+        return None
+
+    url = f"https://api.weather.gov/gridpoints/{gridpoint}/forecast/hourly"
+    try:
+        resp = requests.get(url, headers=_NWS_HEADERS, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("NWS hourly forecast fetch failed for %s: %s", station, exc)
+        return None
+
+    try:
+        periods = resp.json()["properties"]["periods"]
+    except (KeyError, ValueError) as exc:
+        logger.warning("NWS hourly forecast parse failed: %s", exc)
+        return None
+
+    max_f: float | None = None
+    for period in periods:
+        try:
+            start = datetime.fromisoformat(period["startTime"])
+            temp_f = float(period["temperature"])
+            unit = period.get("temperatureUnit", "F")
+            if unit == "C":
+                temp_f = temp_f * 9 / 5 + 32
+        except (KeyError, ValueError, TypeError):
+            continue
+        if as_of_dt <= start <= as_of_dt + timedelta(hours=lookahead_hours):
+            if max_f is None or temp_f > max_f:
+                max_f = temp_f
+
+    return max_f

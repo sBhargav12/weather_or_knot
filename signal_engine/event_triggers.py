@@ -251,106 +251,109 @@ class EventTriggerEngine:
     async def fire_gate_check(self, city: str, trigger_reason: str) -> None:
         cfg = config.CITIES[city]
         station = cfg["wethr_station"]
-        target_date = datetime.now(ZoneInfo(cfg["timezone"])).date().isoformat()
+        now_local = datetime.now(ZoneInfo(cfg["timezone"]))
+        today = now_local.date()
+        allowed_dates = self._allowed_target_dates(now_local)
         markets = self.kalshi.get_active_markets(cfg["series_ticker"])
         brackets = self.kalshi.parse_brackets(markets)
-        models = self.wethr.get_all_models_maxt(station, target_date)
-        hgefs_like = self._hgefs_or_fallback(city, models)
-        nbm = self._latest_nbm(city)
-        if not nbm:
-            nbm = {}
-        consensus = self._consensus(hgefs_like, models, target_date)
-        metar = self._get_metar_951(station, target_date)
-        if consensus is None:
-            logger.info("No consensus available for %s gate check", city)
-            return
+        brackets = self._brackets_for_trading_horizon(brackets, allowed_dates, city)
 
-        for bracket in brackets:
-            market_price = self._market_price(bracket)
-            if market_price is None:
+        for target_date, target_brackets in self._group_brackets_by_target_date(brackets).items():
+            models = self.wethr.get_all_models_maxt(station, target_date)
+            hgefs_like = self._hgefs_or_fallback(city, models, target_date)
+            nbm = self._latest_nbm(city, target_date) or {}
+            consensus = self._consensus(hgefs_like, models, target_date)
+            metar = self._get_metar_951(station, target_date) if target_date == today.isoformat() else None
+            if consensus is None:
+                logger.info("No consensus available for %s %s gate check", city, target_date)
                 continue
-            prob = self.gumbel.compute_bracket_prob(
-                bracket.get("strike_lo"),
-                bracket.get("strike_hi"),
-                consensus,
-                bracket.get("bracket_type", "central"),
-            )
-            prob = self.gumbel.bayesian_update_with_nbm(
-                prob,
-                nbm.get("p50"),
-                nbm.get("p10"),
-                nbm.get("p90"),
-                bracket.get("strike_lo"),
-                bracket.get("strike_hi"),
-                bracket.get("bracket_type", "central"),
-                bool(nbm.get("percentiles_real", True)),
-            )
-            prob = self.gumbel.apply_calibration(prob)
-            center = self._bracket_center(bracket)
-            history = self.orderbook_manager.get_price_history(bracket["ticker"], 8 * 60) if self.orderbook_manager else []
-            gate = run_all_gates(
-                hgefs_like.get("physics_mean"),
-                hgefs_like.get("physics_spread"),
-                hgefs_like.get("ai_mean"),
-                hgefs_like.get("ai_spread"),
-                prob,
-                market_price,
-                market_price,
-                metar,
-                center,
-                bracket.get("strike_lo") or center,
-                "YES",
-                history,
-                bracket["ticker"],
-                wethr_models=models,
-            )
-            self.db.insert_gate_check(self._gate_record(city, bracket, target_date, trigger_reason, gate, hgefs_like))
 
-            # Log every evaluation to candidate_signals (research DB)
-            self._log_candidate(city, bracket, target_date, gate, prob, market_price, hgefs_like)
-
-            # SLEEVE: CORE_HGEFS_GUMBEL — all Tier 1 gates pass
-            if gate["all_pass"] and self._liquid(bracket):
-                using_proxy = hgefs_like.get("gate1_ai_source") == "wethr_proxy"
-                confidence = gate["confidence_score"]
-                if using_proxy:
-                    confidence = max(0.0, confidence - 20.0)
-                entry_price = market_price if gate["direction"] == "YES" else self._no_entry_price(bracket)
-                signal_id = self.db.insert_signal(
-                    {
-                        "city": city,
-                        "ticker": bracket["ticker"],
-                        "target_date": target_date,
-                        "bracket": bracket.get("bracket_label"),
-                        "bracket_lo": bracket.get("strike_lo"),
-                        "bracket_hi": bracket.get("strike_hi"),
-                        "direction": gate["direction"],
-                        "entry_price": entry_price,
-                        "target_price": float(config.TARGET_EXIT_PRICE),
-                        "stop_price": max(0.0, entry_price - float(config.STOP_LOSS_DIFF)),
-                        "model_prob": prob,
-                        "market_price": market_price,
-                        "gap_pp": gate["gap_pp"],
-                        "confidence_score": confidence,
-                        "physics_mean": hgefs_like.get("physics_mean"),
-                        "ai_mean": hgefs_like.get("ai_mean"),
-                        "nbm_p50": nbm.get("p50"),
-                        "metar_temp_f": metar,
-                        "trigger_reason": trigger_reason,
-                        "hgefs_proxy": int(using_proxy),
-                        "strategy_sleeve": "CORE_HGEFS_GUMBEL",
-                        "reasoning": f"All gates passed; gap={gate['gap_pp']:.1f}pp; proxy={using_proxy}",
-                    }
+            for bracket in target_brackets:
+                market_price = self._market_price(bracket)
+                if market_price is None:
+                    continue
+                prob = self.gumbel.compute_bracket_prob(
+                    bracket.get("strike_lo"),
+                    bracket.get("strike_hi"),
+                    consensus,
+                    bracket.get("bracket_type", "central"),
                 )
-                signal = dict(self.db.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))[0])
-                signal["spread"] = bracket.get("spread") or "0"
-                self.paper_trader.on_signal(signal)
+                prob = self.gumbel.bayesian_update_with_nbm(
+                    prob,
+                    nbm.get("p50"),
+                    nbm.get("p10"),
+                    nbm.get("p90"),
+                    bracket.get("strike_lo"),
+                    bracket.get("strike_hi"),
+                    bracket.get("bracket_type", "central"),
+                    bool(nbm.get("percentiles_real", True)),
+                )
+                prob = self.gumbel.apply_calibration(prob)
+                center = self._bracket_center(bracket)
+                history = self.orderbook_manager.get_price_history(bracket["ticker"], 8 * 60) if self.orderbook_manager else []
+                gate = run_all_gates(
+                    hgefs_like.get("physics_mean"),
+                    hgefs_like.get("physics_spread"),
+                    hgefs_like.get("ai_mean"),
+                    hgefs_like.get("ai_spread"),
+                    prob,
+                    market_price,
+                    market_price,
+                    metar,
+                    center,
+                    bracket.get("strike_lo") or center,
+                    "YES",
+                    history,
+                    bracket["ticker"],
+                    wethr_models=models,
+                )
+                self.db.insert_gate_check(self._gate_record(city, bracket, target_date, trigger_reason, gate, hgefs_like))
 
-            # SLEEVE: TAIL_NO — model says bracket unlikely but market still priced in
-            self._check_tail_no_sleeve(city, bracket, target_date, prob, market_price)
+                # Log every evaluation to candidate_signals (research DB)
+                self._log_candidate(city, bracket, target_date, gate, prob, market_price, hgefs_like)
 
-            # SLEEVE: DEEP_TAIL_NO — model says near-zero probability
-            self._check_deep_tail_no_sleeve(city, bracket, target_date, prob, market_price)
+                # SLEEVE: CORE_HGEFS_GUMBEL — all Tier 1 gates pass
+                if gate["all_pass"] and self._liquid(bracket):
+                    using_proxy = hgefs_like.get("gate1_ai_source") == "wethr_proxy"
+                    confidence = gate["confidence_score"]
+                    if using_proxy:
+                        confidence = max(0.0, confidence - 20.0)
+                    entry_price = market_price if gate["direction"] == "YES" else self._no_entry_price(bracket)
+                    signal_id = self.db.insert_signal(
+                        {
+                            "city": city,
+                            "ticker": bracket["ticker"],
+                            "target_date": target_date,
+                            "bracket": bracket.get("bracket_label"),
+                            "bracket_lo": bracket.get("strike_lo"),
+                            "bracket_hi": bracket.get("strike_hi"),
+                            "direction": gate["direction"],
+                            "entry_price": entry_price,
+                            "target_price": float(config.TARGET_EXIT_PRICE),
+                            "stop_price": max(0.0, entry_price - float(config.STOP_LOSS_DIFF)),
+                            "model_prob": prob,
+                            "market_price": market_price,
+                            "gap_pp": gate["gap_pp"],
+                            "confidence_score": confidence,
+                            "physics_mean": hgefs_like.get("physics_mean"),
+                            "ai_mean": hgefs_like.get("ai_mean"),
+                            "nbm_p50": nbm.get("p50"),
+                            "metar_temp_f": metar,
+                            "trigger_reason": trigger_reason,
+                            "hgefs_proxy": int(using_proxy),
+                            "strategy_sleeve": "CORE_HGEFS_GUMBEL",
+                            "reasoning": f"All gates passed; gap={gate['gap_pp']:.1f}pp; proxy={using_proxy}",
+                        }
+                    )
+                    signal = dict(self.db.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))[0])
+                    signal["spread"] = bracket.get("spread") or "0"
+                    self.paper_trader.on_signal(signal)
+
+                # SLEEVE: TAIL_NO — model says bracket unlikely but market still priced in
+                self._check_tail_no_sleeve(city, bracket, target_date, prob, market_price)
+
+                # SLEEVE: DEEP_TAIL_NO — model says near-zero probability
+                self._check_deep_tail_no_sleeve(city, bracket, target_date, prob, market_price)
 
     def _get_current_prices(self) -> dict:
         """Return {ticker: last_yes_price} from kalshi_prices without API calls."""
@@ -373,6 +376,47 @@ class EventTriggerEngine:
                         continue
         return prices
 
+    @staticmethod
+    def _allowed_target_dates(now_local: datetime) -> set[str]:
+        return {
+            (now_local.date() + timedelta(days=offset)).isoformat()
+            for offset in range(config.TRADE_TARGET_DAYS_AHEAD + 1)
+        }
+
+    @staticmethod
+    def _brackets_for_trading_horizon(brackets: list[dict], allowed_dates: set[str], city: str = "") -> list[dict]:
+        """Keep only brackets whose ticker date is in the configured trading horizon."""
+        filtered = []
+        for bracket in brackets:
+            bracket_date = bracket.get("target_date")
+            ticker = bracket.get("ticker")
+            if bracket_date not in allowed_dates:
+                logger.warning(
+                    "Skipping out-of-horizon Kalshi market for %s: ticker=%s ticker_date=%s allowed_dates=%s",
+                    city,
+                    ticker,
+                    bracket_date,
+                    sorted(allowed_dates),
+                )
+                continue
+            filtered.append(bracket)
+        return filtered
+
+    @staticmethod
+    def _brackets_for_target_date(brackets: list[dict], target_date: str, city: str = "") -> list[dict]:
+        """Compatibility wrapper for callers that need exactly one event date."""
+        return EventTriggerEngine._brackets_for_trading_horizon(brackets, {target_date}, city)
+
+    @staticmethod
+    def _group_brackets_by_target_date(brackets: list[dict]) -> dict[str, list[dict]]:
+        grouped: dict[str, list[dict]] = {}
+        for bracket in brackets:
+            target_date = bracket.get("target_date")
+            if target_date is None:
+                continue
+            grouped.setdefault(target_date, []).append(bracket)
+        return grouped
+
     def _is_dsm_window(self, now_et: datetime) -> bool:
         """True if current time is in the 4:15–4:30 PM ET DSM cancel window."""
         t = now_et.time()
@@ -389,7 +433,12 @@ class EventTriggerEngine:
             return
         current_prices = self._get_current_prices()
         for trade in open_trades:
-            price = current_prices.get(trade["ticker"], float(trade.get("entry_price", 0)))
+            yes_price = current_prices.get(trade["ticker"])
+            price = (
+                self.paper_trader.current_side_price(trade, yes_price)
+                if yes_price is not None
+                else float(trade.get("entry_price", 0))
+            )
             self.paper_trader._exit_trade(trade["id"], price, "TIME_LIMIT")
             logger.info("TIME_LIMIT exit for %s at %.2f", trade["ticker"], price)
 
@@ -532,7 +581,7 @@ class EventTriggerEngine:
                         logger.warning("fallback gate check failed for %s: %s", city, exc)
             await asyncio.sleep(60)
 
-    def _hgefs_or_fallback(self, city: str, models: dict) -> dict:
+    def _hgefs_or_fallback(self, city: str, models: dict, target_date: Optional[str] = None) -> dict:
         latest = self.db.get_model_run_latest(city, "HGEFS")
         if latest and latest.get("physics_mean") is not None:
             raw = json.loads(latest.get("raw_data_json") or "{}")
@@ -547,8 +596,8 @@ class EventTriggerEngine:
             # wethr consensus as the AI proxy so Gate 1 still runs a cross-check.
             # ai_spread is the actual std-dev of the wethr models, not a constant.
             if result.get("ai_mean") is None and models:
-                target_date = datetime.now(ZoneInfo(config.CITIES[city]["timezone"])).date().isoformat()
-                wethr_consensus = self.gumbel.compute_consensus_from_wethr(models, target_date)
+                effective_target_date = target_date or datetime.now(ZoneInfo(config.CITIES[city]["timezone"])).date().isoformat()
+                wethr_consensus = self.gumbel.compute_consensus_from_wethr(models, effective_target_date)
                 if wethr_consensus is not None:
                     wethr_values = [float(v) for v in models.values() if v is not None]
                     import numpy as _np
@@ -581,8 +630,20 @@ class EventTriggerEngine:
                 }
         return {"physics_mean": None, "ai_mean": None, "physics_spread": None, "ai_spread": None}
 
-    def _latest_nbm(self, city: str) -> dict:
-        latest = self.db.get_model_run_latest(city, "NBM_BULLETIN")
+    def _latest_nbm(self, city: str, target_date: Optional[str] = None) -> dict:
+        if target_date is None:
+            latest = self.db.get_model_run_latest(city, "NBM_BULLETIN")
+        else:
+            rows = self.db.execute(
+                """
+                SELECT * FROM model_runs
+                WHERE city = ? AND model = ? AND target_date = ?
+                ORDER BY run_time DESC, created_at DESC
+                LIMIT 1
+                """,
+                (city, "NBM_BULLETIN", target_date),
+            )
+            latest = dict(rows[0]) if rows else None
         if latest and latest.get("nbm_p50") is not None:
             raw = json.loads(latest.get("raw_data_json") or "{}")
             return {
