@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional, Tuple
+from typing import Callable, Deque, Dict, List, Optional, Tuple
 
 import websockets
 
@@ -46,11 +46,20 @@ class KalshiOrderBook:
         self.connected = True
 
     def apply_delta(self, msg: dict) -> None:
+        if not self.connected:
+            logger.debug("apply_delta on uninitialized book %s before snapshot; ignoring", self.ticker)
+            return
         data = msg.get("msg", {})
         price = Decimal(str(data.get("price_dollars", data.get("price", "0"))))
         delta = Decimal(str(data.get("delta_fp", data.get("delta", "0"))))
         side = data.get("side")
-        book = self.yes_bids if side == "yes" else self.no_bids
+        if side == "yes":
+            book = self.yes_bids
+        elif side == "no":
+            book = self.no_bids
+        else:
+            logger.warning("apply_delta: unknown side %r for %s, skipping", side, self.ticker)
+            return
         new_qty = book.get(price, Decimal("0")) + delta
         if new_qty <= 0:
             book.pop(price, None)
@@ -78,6 +87,16 @@ class KalshiOrderBook:
     def spread(self) -> Decimal:
         return self.yes_ask - self.best_yes_bid
 
+    def serialised_yes_bids(self) -> list[list[str]]:
+        return self._serialise_book(self.yes_bids)
+
+    def serialised_no_bids(self) -> list[list[str]]:
+        return self._serialise_book(self.no_bids)
+
+    @staticmethod
+    def _serialise_book(book: Dict[Decimal, Decimal]) -> list[list[str]]:
+        return [[str(price), str(qty)] for price, qty in sorted(book.items(), reverse=True)]
+
 
 class KalshiOrderbookManager:
     def __init__(self, key_id: str, key_path: str, db=None):
@@ -88,11 +107,40 @@ class KalshiOrderbookManager:
         self.last_seq: Optional[int] = None
 
     async def run(self, tickers: list) -> None:
+        await self.run_dynamic(lambda: tickers, refresh_interval_seconds=0)
+
+    async def run_dynamic(
+        self,
+        ticker_provider: Callable[[], list],
+        refresh_interval_seconds: int = config.KALSHI_WS_REFRESH_INTERVAL_SECONDS,
+    ) -> None:
+        """Maintain a live subscription, periodically refreshing the ticker set."""
+        current_tickers: list[str] = []
+        while True:
+            tickers = sorted(set(ticker_provider()))
+            if not tickers:
+                logger.warning("No Kalshi tickers supplied to orderbook manager")
+                await asyncio.sleep(5)
+                continue
+            if tickers != current_tickers:
+                added = sorted(set(tickers) - set(current_tickers))
+                removed = sorted(set(current_tickers) - set(tickers))
+                logger.info(
+                    "Refreshing Kalshi orderbook subscription: %d tickers (%d added, %d removed)",
+                    len(tickers),
+                    len(added),
+                    len(removed),
+                )
+                current_tickers = tickers
+            await self._run_subscription(tickers, refresh_interval_seconds)
+
+    async def _run_subscription(self, tickers: list[str], refresh_interval_seconds: int) -> None:
         if not tickers:
             logger.warning("No Kalshi tickers supplied to orderbook manager")
             await asyncio.sleep(5)
             return
         self.books = {ticker: KalshiOrderBook(ticker) for ticker in tickers}
+        self.last_seq = None
         backoff = 1
         while True:
             try:
@@ -108,11 +156,21 @@ class KalshiOrderbookManager:
                             }
                         )
                     )
+                    if refresh_interval_seconds:
+                        async with asyncio.timeout(refresh_interval_seconds):
+                            async for raw in ws:
+                                msg = json.loads(raw)
+                                self.handle_message(msg)
+                        logger.info("Kalshi orderbook refresh interval reached; rebuilding subscription")
+                        return
                     async for raw in ws:
                         msg = json.loads(raw)
                         self.handle_message(msg)
             except asyncio.CancelledError:
                 raise
+            except TimeoutError:
+                logger.info("Kalshi orderbook refresh interval reached; rebuilding subscription")
+                return
             except Exception as exc:
                 logger.warning("Kalshi WebSocket error: %s. Reconnecting in %ss", exc, backoff)
                 await asyncio.sleep(min(backoff, 60))
@@ -155,6 +213,23 @@ class KalshiOrderbookManager:
                     "source": "websocket",
                 }
             )
+            if config.KALSHI_STORE_FULL_ORDERBOOK_SNAPSHOTS:
+                self.db.insert_kalshi_orderbook_snapshot(
+                    {
+                        "ticker": ticker,
+                        "city": self._city_from_ticker(ticker),
+                        "sequence": book.last_seq,
+                        "yes_bid": str(book.best_yes_bid),
+                        "yes_ask": str(book.yes_ask),
+                        "no_bid": str(book.best_no_bid),
+                        "no_ask": str(book.no_ask),
+                        "spread": str(book.spread),
+                        "spread_cents": float(book.spread * 100),
+                        "yes_bids_json": json.dumps(book.serialised_yes_bids()),
+                        "no_bids_json": json.dumps(book.serialised_no_bids()),
+                        "source": "websocket",
+                    }
+                )
 
     def _invalidate_books(self) -> None:
         for book in self.books.values():
@@ -196,4 +271,26 @@ class KalshiOrderbookManager:
             return "KPHL"
         if ticker.startswith("KXHIGHCHI"):
             return "KMDW"
+        if ticker.startswith("KXHIGHMIA"):
+            return "KMIA"
+        if ticker.startswith("KXHIGHAUS"):
+            return "KAUS"
+        if ticker.startswith("KXHIGHLAX"):
+            return "KLAX"
+        if ticker.startswith("KXHIGHDEN"):
+            return "KDEN"
+        if ticker.startswith("KXLOWTNYC"):
+            return "KNYC"
+        if ticker.startswith("KXLOWTCHI"):
+            return "KMDW"
+        if ticker.startswith("KXLOWTMIA"):
+            return "KMIA"
+        if ticker.startswith("KXLOWTAUS"):
+            return "KAUS"
+        if ticker.startswith("KXLOWTLAX"):
+            return "KLAX"
+        if ticker.startswith("KXLOWTDEN"):
+            return "KDEN"
+        if ticker.startswith("KXLOWTPHIL"):
+            return "KPHL"
         return "UNKNOWN"

@@ -5,18 +5,27 @@ from statistics import median, stdev
 from typing import Any, Dict, Optional, Tuple
 
 import config
+from signal_engine.schemas import (
+    Gate1Result,
+    Gate2Result,
+    Gate3Result,
+    Gate4Result,
+    Gate5Result,
+    Gate6Result,
+    GateCheckResult,
+)
 
 # ---------------------------------------------------------------------------
 # TIERED GATE SYSTEM
 #
 # TIER 1 — Hard requirements. All must pass to generate a signal.
-#   Gate 1: Model convergence (HGEFS or wethr-proxy)
+#   Gate 1: Model convergence (HGEFS or wethr-proxy); hard-blocks if |HGEFS–NBM| ≥ 15°F
 #   Gate 2: Gumbel gap >= config.MIN_GAP_PP
 #   Gate 3: Price band 0.25–0.75
 #
 # TIER 2 — Confidence modifiers only. Never block a signal.
 #   Gate 4: Dead zone (35–40pp) → -25 confidence
-#   Gate 5: METAR confirmation → ±25 confidence (missing = neutral)
+#   Gate 5: METAR confirmation → +25 (confirms) / -15 (contradicts) / -10 (missing)
 #   Gate 6: Evening reversal → ±30 confidence
 #
 # CONFIDENCE → POSITION SIZE:
@@ -33,34 +42,66 @@ _GATE2_MIN_GAP_HARD = config.MIN_GAP_PP                            # strict hard
 _GATE2_HIGH_CONFIDENCE_GAP = config.MIN_GAP_PP + 5.0
 
 
+def _nbm_disagreement(hgefs_consensus: float, nbm_p50: Optional[float]) -> tuple[bool, float, float]:
+    """Return (hard_block, gap_f, confidence_penalty) for NBM vs HGEFS gap check."""
+    if nbm_p50 is None:
+        return False, 0.0, 0.0
+    gap = abs(hgefs_consensus - float(nbm_p50))
+    if gap >= config.NBM_HGEFS_HARD_BLOCK_GAP_F:
+        return True, gap, 0.0
+    if gap >= config.NBM_HGEFS_PENALTY_GAP_F:
+        return False, gap, -30.0
+    return False, gap, 0.0
+
+
 def check_gate_1(
     physics_mean: Optional[float],
     physics_spread: Optional[float],
     ai_mean: Optional[float],
     ai_spread: Optional[float],
     wethr_models: Optional[Dict[str, float]] = None,
+    nbm_p50: Optional[float] = None,
 ) -> Tuple[bool, dict]:
-    """TIER 1. Pass if real HGEFS agrees OR wethr-proxy spread is tight."""
+    """TIER 1. Pass if real HGEFS agrees OR wethr-proxy spread is tight.
+
+    Also hard-blocks when NBM p50 disagrees with HGEFS consensus by >=15°F —
+    that gap is a 3-sigma signal that HGEFS missed a front (e.g. 2026-05-03:
+    HGEFS=70.6°F, NBM=50°F, actual=55°F).  An 8–15°F gap adds -30 confidence.
+    """
 
     # Path A: real HGEFS data
     if None not in (physics_mean, physics_spread, ai_mean, ai_spread):
         spread_between = abs(float(physics_mean) - float(ai_mean))
-        gate_pass = (
+        hgefs_consensus = (float(physics_mean) + float(ai_mean)) / 2.0
+        nbm_block, nbm_gap, nbm_penalty = _nbm_disagreement(hgefs_consensus, nbm_p50)
+        convergence_pass = (
             spread_between <= _GATE1_MAX_SPREAD_BETWEEN
             and float(physics_spread) < _GATE1_MAX_SUBSET_SPREAD
             and float(ai_spread) < _GATE1_MAX_SUBSET_SPREAD
         )
-        confidence_add = 30.0 if gate_pass else 0.0
+        gate_pass = convergence_pass and not nbm_block
+        if gate_pass:
+            confidence_add = 30.0 + nbm_penalty
+        else:
+            confidence_add = 0.0
+        if nbm_block:
+            reason = f"nbm_hgefs_gap_{nbm_gap:.1f}F_hard_block"
+        elif not convergence_pass:
+            reason = f"real_hgefs_spread_{spread_between:.2f}F"
+        else:
+            reason = "pass"
         return gate_pass, {
             "physics_mean": physics_mean,
             "physics_spread": physics_spread,
             "ai_mean": ai_mean,
             "ai_spread": ai_spread,
             "spread_between": spread_between,
+            "nbm_p50": nbm_p50,
+            "nbm_hgefs_gap_f": nbm_gap,
             "pass": gate_pass,
             "hgefs_real": True,
             "confidence_add": confidence_add,
-            "reason": "pass" if gate_pass else f"real_hgefs_spread_{spread_between:.2f}F",
+            "reason": reason,
         }
 
     # Path B: wethr-proxy — need >= 3 models within 3°F of each other
@@ -71,18 +112,31 @@ def check_gate_1(
             agreeing = [v for v in values if abs(v - med) <= 3.0]
             if len(agreeing) >= 3:
                 proxy_std = stdev(agreeing) if len(agreeing) >= 2 else 0.0
-                gate_pass = proxy_std < _GATE1_PROXY_MAX_STD
-                confidence_add = 15.0 if gate_pass else 0.0
+                nbm_block, nbm_gap, nbm_penalty = _nbm_disagreement(med, nbm_p50)
+                convergence_pass = proxy_std < _GATE1_PROXY_MAX_STD
+                gate_pass = convergence_pass and not nbm_block
+                if gate_pass:
+                    confidence_add = 15.0 + nbm_penalty
+                else:
+                    confidence_add = 0.0
+                if nbm_block:
+                    reason = f"nbm_hgefs_gap_{nbm_gap:.1f}F_hard_block"
+                elif not convergence_pass:
+                    reason = f"proxy_spread_{proxy_std:.2f}F"
+                else:
+                    reason = "pass_proxy"
                 return gate_pass, {
                     "physics_mean": med,
                     "physics_spread": proxy_std,
                     "ai_mean": med,
                     "ai_spread": proxy_std,
                     "spread_between": 0.0,
+                    "nbm_p50": nbm_p50,
+                    "nbm_hgefs_gap_f": nbm_gap,
                     "pass": gate_pass,
                     "hgefs_real": False,
                     "confidence_add": confidence_add,
-                    "reason": "pass_proxy" if gate_pass else f"proxy_spread_{proxy_std:.2f}F",
+                    "reason": reason,
                 }
 
     return False, {
@@ -91,6 +145,8 @@ def check_gate_1(
         "ai_mean": ai_mean,
         "ai_spread": ai_spread,
         "spread_between": None,
+        "nbm_p50": nbm_p50,
+        "nbm_hgefs_gap_f": None,
         "pass": False,
         "hgefs_real": False,
         "confidence_add": 0.0,
@@ -155,20 +211,39 @@ def check_gate_4(gap_pp: float) -> Tuple[bool, dict]:
     }
 
 
-def check_gate_5(metar_temp_f: Optional[float], bracket_center_f: float, direction: str) -> Tuple[bool, dict]:
-    """TIER 2. METAR modifies confidence; missing reading = neutral (no penalty)."""
-    if metar_temp_f is None:
+def check_gate_5(
+    metar_temp_f: Optional[float],
+    bracket_center_f: float,
+    direction: str,
+    six_hour_high_f: Optional[float] = None,
+) -> Tuple[bool, dict]:
+    """TIER 2. METAR modifies confidence; missing reading = neutral (no penalty).
+
+    For YES brackets the effective temperature is max(metar, six_hour_high) — the
+    rolling 6-hour high is a better floor for where today's peak is heading than
+    the instantaneous METAR reading, which can be temporarily depressed by wind or
+    instrumentation lag.
+    """
+    if metar_temp_f is None and six_hour_high_f is None:
         return True, {
             "metar_temp_f": None,
+            "six_hour_high_f": None,
+            "effective_temp_f": None,
             "bracket_center_f": bracket_center_f,
             "distance": None,
             "direction": direction,
             "pass": True,
-            "confidence_delta": 0.0,
-            "reason": "metar_unavailable_neutral",
+            "confidence_delta": -10.0,
+            "reason": "metar_unavailable_penalty",
         }
 
-    distance = abs(float(metar_temp_f) - float(bracket_center_f))
+    # For YES: peak observed so far is the most informative signal.
+    # For NO: use metar_temp_f only (six_hour_high being high hurts a NO bet —
+    #         that's already captured by distance > threshold).
+    candidates = [v for v in (metar_temp_f, six_hour_high_f if direction == "YES" else None) if v is not None]
+    effective_temp = max(candidates) if candidates else (metar_temp_f or six_hour_high_f)
+
+    distance = abs(float(effective_temp) - float(bracket_center_f))
     if direction == "YES":
         within_threshold = distance <= config.METAR_YES_MAX_DISTANCE
     else:
@@ -178,6 +253,8 @@ def check_gate_5(metar_temp_f: Optional[float], bracket_center_f: float, directi
 
     return True, {   # always passes — TIER 2 modifier only
         "metar_temp_f": metar_temp_f,
+        "six_hour_high_f": six_hour_high_f,
+        "effective_temp_f": effective_temp,
         "bracket_center_f": bracket_center_f,
         "distance": distance,
         "direction": direction,
@@ -238,25 +315,15 @@ def check_gate_6(ticker: str, bracket_low_f: float, price_history: list) -> Tupl
     }
 
 
-def compute_confidence_score(gate_results: dict) -> float:
+def compute_confidence_score(gate_results: GateCheckResult) -> float:
     """Sum confidence contributions from all gates, clamped to [0, 100]."""
-    score = 0.0
-
-    g1 = gate_results.get("gate1", {})
-    score += g1.get("confidence_add", 0.0)
-
-    g2 = gate_results.get("gate2", {})
-    score += g2.get("confidence_add", 0.0)
-
-    g4 = gate_results.get("gate4", {})
-    score += g4.get("confidence_delta", 0.0)
-
-    g5 = gate_results.get("gate5", {})
-    score += g5.get("confidence_delta", 0.0)
-
-    g6 = gate_results.get("gate6", {})
-    score += g6.get("confidence_delta", 0.0)
-
+    score = (
+        gate_results.gate1.confidence_add
+        + gate_results.gate2.confidence_add
+        + gate_results.gate4.confidence_delta
+        + gate_results.gate5.confidence_delta
+        + gate_results.gate6.confidence_delta
+    )
     return round(min(100.0, max(0.0, score)), 2)
 
 
@@ -275,40 +342,91 @@ def run_all_gates(
     price_history,
     ticker,
     wethr_models: Optional[Dict[str, float]] = None,
-) -> dict:
-    g1_pass, g1 = check_gate_1(physics_mean, physics_spread, ai_mean, ai_spread, wethr_models)
+    nbm_p50: Optional[float] = None,
+    six_hour_high_f: Optional[float] = None,
+) -> GateCheckResult:
+    g1_pass, g1 = check_gate_1(physics_mean, physics_spread, ai_mean, ai_spread, wethr_models, nbm_p50)
     g2_pass, g2 = check_gate_2(model_prob, market_price)
     effective_direction = g2["direction"]
     g3_pass, g3 = check_gate_3(yes_price, effective_direction)
 
-    # Tier 1: all three must pass
     tier1_pass = g1_pass and g2_pass and g3_pass
 
-    # Tier 2: confidence modifiers (always pass as standalone gates)
     _, g4 = check_gate_4(g2["gap_pp"])
-    _, g5 = check_gate_5(metar_temp_f, bracket_center_f, effective_direction)
+    _, g5 = check_gate_5(metar_temp_f, bracket_center_f, effective_direction, six_hour_high_f)
     _, g6 = check_gate_6(ticker, bracket_low_f, price_history)
 
-    result = {
-        "all_pass": tier1_pass,
-        "direction": effective_direction,
-        "requested_direction": direction,
-        "gap_pp": g2["gap_pp"],
-        "gate1": g1,
-        "gate2": g2,
-        "gate3": g3,
-        "gate4": g4,
-        "gate5": g5,
-        "gate6": g6,
-        "skip_reason": None
-        if tier1_pass
-        else next(
-            f"gate{i + 1}_fail"
-            for i, passed in enumerate([g1_pass, g2_pass, g3_pass])
-            if not passed
+    skip_reason = None if tier1_pass else next(
+        f"gate{i + 1}_fail"
+        for i, passed in enumerate([g1_pass, g2_pass, g3_pass])
+        if not passed
+    )
+
+    result = GateCheckResult(
+        all_pass=tier1_pass,
+        direction=effective_direction,
+        requested_direction=direction,
+        gap_pp=g2["gap_pp"],
+        gate1=Gate1Result(
+            physics_mean=g1.get("physics_mean"),
+            physics_spread=g1.get("physics_spread"),
+            ai_mean=g1.get("ai_mean"),
+            ai_spread=g1.get("ai_spread"),
+            spread_between=g1.get("spread_between"),
+            nbm_p50=g1.get("nbm_p50"),
+            nbm_hgefs_gap_f=g1.get("nbm_hgefs_gap_f"),
+            passed=g1_pass,
+            hgefs_real=g1.get("hgefs_real", False),
+            confidence_add=g1.get("confidence_add", 0.0),
+            reason=g1.get("reason", ""),
         ),
-    }
-    result["confidence_score"] = compute_confidence_score(result)
+        gate2=Gate2Result(
+            model_prob=g2["model_prob"],
+            market_price=g2["market_price"],
+            gap_pp=g2["gap_pp"],
+            direction=g2["direction"],
+            in_dead_zone=g2["in_dead_zone"],
+            passed=g2_pass,
+            confidence_add=g2["confidence_add"],
+        ),
+        gate3=Gate3Result(
+            yes_price=g3["yes_price"],
+            entry_price=g3["entry_price"],
+            direction=g3["direction"],
+            passed=g3_pass,
+            reason=g3["reason"],
+        ),
+        gate4=Gate4Result(
+            gap_pp=g4["gap_pp"],
+            in_dead_zone=g4["in_dead_zone"],
+            passed=True,
+            confidence_delta=g4["confidence_delta"],
+        ),
+        gate5=Gate5Result(
+            metar_temp_f=g5.get("metar_temp_f"),
+            six_hour_high_f=g5.get("six_hour_high_f"),
+            effective_temp_f=g5.get("effective_temp_f"),
+            bracket_center_f=g5["bracket_center_f"],
+            distance=g5.get("distance"),
+            direction=g5["direction"],
+            passed=True,
+            metar_confirms=g5.get("metar_confirms"),
+            confidence_delta=g5["confidence_delta"],
+            reason=g5["reason"],
+        ),
+        gate6=Gate6Result(
+            ticker=g6["ticker"],
+            is_cold_bracket=g6["is_cold_bracket"],
+            reversal_detected=g6.get("reversal_detected", False),
+            max_price=g6.get("max_price"),
+            current_price=g6.get("current_price"),
+            passed=True,
+            confidence_delta=g6["confidence_delta"],
+            reason=g6["reason"],
+        ),
+        skip_reason=skip_reason,
+    )
+    result.confidence_score = compute_confidence_score(result)
     return result
 
 

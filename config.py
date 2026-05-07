@@ -71,6 +71,10 @@ FALLBACK_ENSEMBLE_WEIGHTS = {
 # Gate thresholds
 HGEFS_MAX_SPREAD_BETWEEN = 1.5
 HGEFS_MAX_SUBSET_SPREAD = 3.0
+# NBM vs HGEFS disagreement: >15°F = hard block (Gate 1 fail); 8–15°F = -30 confidence penalty.
+# Today (2026-05-03) was a 20°F gap; HGEFS was 15°F wrong, NBM was 5°F wrong.
+NBM_HGEFS_HARD_BLOCK_GAP_F = 15.0
+NBM_HGEFS_PENALTY_GAP_F = 8.0
 METAR_YES_MAX_DISTANCE = 8.0
 METAR_NO_MIN_DISTANCE = 3.0
 REVERSAL_THRESHOLD = Decimal("0.10")
@@ -90,11 +94,12 @@ MAKER_FEE_RATE = 0.0175
 
 
 def taker_fee(contracts: int, price: float) -> float:
-    return math.ceil(TAKER_FEE_RATE * contracts * price * (1 - price) * 100) / 100
+    # Kalshi charges per-contract; ceiling must be applied per contract, not on the batch total.
+    return contracts * (math.ceil(TAKER_FEE_RATE * price * (1 - price) * 100) / 100)
 
 
 def maker_fee(contracts: int, price: float) -> float:
-    return math.ceil(MAKER_FEE_RATE * contracts * price * (1 - price) * 100) / 100
+    return contracts * (math.ceil(MAKER_FEE_RATE * price * (1 - price) * 100) / 100)
 
 
 CITIES = {
@@ -112,14 +117,14 @@ CITIES = {
     },
     "KPHL": {
         "name": "Philadelphia",
-        "series_ticker": "KXHIGHPHL",
+        "series_ticker": "KXHIGHPHIL",
         "timezone": "America/New_York",
         "lat": 39.8729,
         "lon": -75.2408,
         "lon_360": 284.7592,
-        "dsm_times_utc": ["20:21", "21:21"],
+        "dsm_times_utc": ["20:21", "21:21", "05:17"],
         "sharpe_backtest": 2.83,
-        "active": True,
+        "active": False,
         "wethr_station": "KPHL",
     },
     "KMDW": {
@@ -131,19 +136,170 @@ CITIES = {
         "lon_360": 272.2478,
         "dsm_times_utc": ["21:17", "22:17", "06:17"],
         "sharpe_backtest": 1.58,
-        "active": False,
+        "active": True,
         "wethr_station": "KMDW",
+    },
+    "KMIA": {
+        "name": "Miami International",
+        "series_ticker": "KXHIGHMIA",
+        "timezone": "America/New_York",
+        "lat": 25.7959,
+        "lon": -80.2870,
+        "lon_360": 279.7130,
+        "dsm_times_utc": ["20:21", "21:21", "05:17"],
+        "sharpe_backtest": 0.384,
+        "active": True,
+        "wethr_station": "KMIA",
+    },
+    "KAUS": {
+        "name": "Austin-Bergstrom International",
+        "series_ticker": "KXHIGHAUS",
+        "timezone": "America/Chicago",
+        "lat": 30.1944,
+        "lon": -97.6699,
+        "lon_360": 262.3301,
+        "dsm_times_utc": ["21:17", "22:17", "06:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KAUS",
+    },
+    "KLAX": {
+        "name": "Los Angeles International",
+        "series_ticker": "KXHIGHLAX",
+        "timezone": "America/Los_Angeles",
+        "lat": 33.9425,
+        "lon": -118.4081,
+        "lon_360": 241.5919,
+        "dsm_times_utc": ["23:17", "00:17", "08:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KLAX",
+    },
+    "KDEN": {
+        "name": "Denver International",
+        "series_ticker": "KXHIGHDEN",
+        "timezone": "America/Denver",
+        "lat": 39.8561,
+        "lon": -104.6737,
+        "lon_360": 255.3263,
+        "dsm_times_utc": ["22:17", "23:17", "07:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KDEN",
+    },
+    "KXLOWTNYC": {
+        "name": "New York City Low (Central Park)",
+        "series_ticker": "KXLOWTNYC",
+        "settlement_type": "low",
+        "timezone": "America/New_York",
+        "lat": 40.7789,
+        "lon": -73.9692,
+        "lon_360": 286.0308,
+        "dsm_times_utc": ["20:21", "21:21", "05:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KNYC",
+    },
+    "KXLOWTCHI": {
+        "name": "Chicago Midway Low",
+        "series_ticker": "KXLOWTCHI",
+        "settlement_type": "low",
+        "timezone": "America/Chicago",
+        "lat": 41.7868,
+        "lon": -87.7522,
+        "lon_360": 272.2478,
+        "dsm_times_utc": ["21:17", "22:17", "06:17"],
+        "sharpe_backtest": 0.714,
+        "active": True,
+        "wethr_station": "KMDW",
+    },
+    "KXLOWTMIA": {
+        "name": "Miami International Low",
+        "series_ticker": "KXLOWTMIA",
+        "settlement_type": "low",
+        "timezone": "America/New_York",
+        "lat": 25.7959,
+        "lon": -80.2870,
+        "lon_360": 279.7130,
+        "dsm_times_utc": ["20:21", "21:21", "05:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KMIA",
+    },
+    "KXLOWTAUS": {
+        "name": "Austin-Bergstrom International Low",
+        "series_ticker": "KXLOWTAUS",
+        "settlement_type": "low",
+        "timezone": "America/Chicago",
+        "lat": 30.1944,
+        "lon": -97.6699,
+        "lon_360": 262.3301,
+        "dsm_times_utc": ["21:17", "22:17", "06:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KAUS",
+    },
+    "KXLOWTLAX": {
+        "name": "Los Angeles International Low",
+        "series_ticker": "KXLOWTLAX",
+        "settlement_type": "low",
+        "timezone": "America/Los_Angeles",
+        "lat": 33.9425,
+        "lon": -118.4081,
+        "lon_360": 241.5919,
+        "dsm_times_utc": ["23:17", "00:17", "08:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KLAX",
+    },
+    "KXLOWTDEN": {
+        "name": "Denver International Low",
+        "series_ticker": "KXLOWTDEN",
+        "settlement_type": "low",
+        "timezone": "America/Denver",
+        "lat": 39.8561,
+        "lon": -104.6737,
+        "lon_360": 255.3263,
+        "dsm_times_utc": ["22:17", "23:17", "07:17"],
+        "sharpe_backtest": 0.628,
+        "active": True,
+        "wethr_station": "KDEN",
+    },
+    "KXLOWTPHIL": {
+        "name": "Philadelphia International Low",
+        "series_ticker": "KXLOWTPHIL",
+        "settlement_type": "low",
+        "timezone": "America/New_York",
+        "lat": 39.8729,
+        "lon": -75.2408,
+        "lon_360": 284.7592,
+        "dsm_times_utc": ["20:21", "21:21", "05:17"],
+        "sharpe_backtest": None,
+        "active": False,
+        "wethr_station": "KPHL",
     },
 }
 
 DSM_CANCEL_TIME_ET = "16:15"
 MAX_HOLD_TIME_ET = "23:00"
 METAR_GATE_TIME_ET = "09:51"
+DEEP_TAIL_EARLY_ET = "10:15"   # DEEP_TAIL_NO fires 15min after tomorrow market lists (~10AM ET)
+LADDER_EVENT_RUN_ET = "10:00"  # Strategy 2 morning event-level ladder check
 FALLBACK_ENTRY_ET = "11:00"
 DAILY_REPORT_TIME_ET = "08:00"
+EOD_REPORT_TIME_ET = "18:35"  # after DSM window (16:15–18:30 ET)
 CLI_CHECK_TIME_ET = "07:00"
 TELECONN_UPDATE_ET = "06:00"
 TRADE_TARGET_DAYS_AHEAD = 1
+
+# Market data collection is intentionally broader than live/paper trading.
+# Trading gates use active=True cities; collection can follow every configured
+# weather series so research/backtests have today's and tomorrow's full tape.
+COLLECT_MARKET_DATA_FOR_INACTIVE_CITIES = True
+KALSHI_COLLECT_TARGET_DAYS = 1
+KALSHI_REST_COLLECTION_INTERVAL_SECONDS = 60
+KALSHI_WS_REFRESH_INTERVAL_SECONDS = 300
+KALSHI_STORE_FULL_ORDERBOOK_SNAPSHOTS = True
 
 POLL_INTERVAL_60S = 60
 POLL_INTERVAL_5MIN = 300
@@ -161,6 +317,7 @@ MODEL_RUN_SCHEDULE_ET = {
 
 # 12Z GFS run (~12:40 PM ET) is the most important trigger for afternoon trading.
 PEAK_MODEL_RUN_ET = "12:40"
+BRACKET_LOCK_RUN_ET = "15:00"  # 3:00 PM ET — intraday bracket confirmation window
 
 TEMP_ANOMALY_TRIGGER = 1.5
 PRICE_MOVE_TRIGGER = Decimal("0.05")
@@ -189,3 +346,7 @@ NBM_V5_CUTOVER = "2026-04-15"
 MAX_DAILY_LOSS_PCT = 0.10
 MAX_WEEKLY_LOSS_PCT = 0.20
 MIN_BRIER_SKILL_SCORE = 0.0
+
+# Live trading — controlled by live_trader/config_live.py and env vars.
+# STARTING_BANKROLL above is for paper trading only.
+LIVE_BANKROLL = float(os.environ.get("LIVE_BANKROLL", "25.0"))

@@ -23,7 +23,7 @@ wheels/
 # Virtual environments
 .venv
 .backfill_cursor
-data
+/data
 data.zip
 release_assets/
 
@@ -32,10 +32,20 @@ research/*
 !research/main.pdf
 !research/fig
 !research/analysis
+!research/backtests/
+!research/backtests/*.py
 !research/sections
 !research/*.py
 !research/sql/
 !research/sql/**
+!research/data/
+!research/data/*.py
+!research/becker/
+!research/becker/*.py
+!research/models/
+!research/models/*.py
+!research/polymarket/
+!research/polymarket/*.py
 
 scratchpad
 

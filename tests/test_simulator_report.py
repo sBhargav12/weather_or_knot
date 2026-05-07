@@ -42,19 +42,109 @@ def test_signal_to_trade_and_target_exit(tmp_path):
         "target_date": "2026-04-25",
         "bracket": "70-72F",
         "direction": "YES",
-        "market_price": 0.50,
-        "entry_price": 0.50,
-        "model_prob": 0.75,
+        "market_price": 0.60,
+        "entry_price": 0.60,   # >= PAPER_CORE_MIN_ENTRY_PRICE (0.55) → allowed
+        "model_prob": 0.85,
         "spread": "0.02",
-        "confidence_score": 85.0,  # high confidence → full QK cap
+        "confidence_score": 85.0,
     }
     trade = trader.on_signal(signal)
     assert trade is not None
-    assert trade["entry_price"] == 0.51
-    trader.check_exits({signal["ticker"]: Decimal("0.70")})
+    assert trade["entry_price"] == 0.61   # 0.60 + 0.01 slippage
+    # 0.69 >= TARGET (0.68) but < NEVER_HOLD_ABOVE (0.70) → TARGET exit
+    trader.check_exits({signal["ticker"]: Decimal("0.69")})
     rows = trader.db.execute("SELECT * FROM paper_trades WHERE id = ?", (trade["id"],))
     assert rows[0]["exit_reason"] == "TARGET"
     assert rows[0]["exit_price"] == 0.68
+
+
+def test_never_hold_above_exit(tmp_path):
+    """Price at or above NEVER_HOLD_ABOVE (0.70) exits at 0.70, not 0.68."""
+    db_path = tmp_path / "pipeline.db"
+    create_database(str(db_path))
+    trader = PaperTrader(500, str(db_path))
+    signal = {
+        "id": 2,
+        "city": "KNYC",
+        "ticker": "KXHIGHNY-26APR25-T70",
+        "target_date": "2026-04-25",
+        "bracket": "70-72F",
+        "direction": "YES",
+        "market_price": 0.60,
+        "entry_price": 0.60,   # >= PAPER_CORE_MIN_ENTRY_PRICE (0.55) → allowed
+        "model_prob": 0.85,
+        "spread": "0.02",
+        "confidence_score": 85.0,
+    }
+    trade = trader.on_signal(signal)
+    assert trade is not None
+    trader.check_exits({signal["ticker"]: Decimal("0.70")})
+    rows = trader.db.execute("SELECT * FROM paper_trades WHERE id = ?", (trade["id"],))
+    assert rows[0]["exit_reason"] == "NEVER_HOLD_ABOVE"
+    assert rows[0]["exit_price"] == 0.70
+
+
+def test_strategy_3_uses_fixed_contracts_and_custom_exit(tmp_path):
+    db_path = tmp_path / "pipeline.db"
+    create_database(str(db_path))
+    trader = PaperTrader(500, str(db_path))
+    signal = {
+        "id": 3,
+        "city": "KNYC",
+        "ticker": "KXHIGHNY-26APR25-B70.5",
+        "target_date": "2026-04-25",
+        "bracket": "70.0-71.0F",
+        "direction": "YES",
+        "market_price": 0.80,
+        "entry_price": 0.80,
+        "model_prob": 0.80,
+        "spread": "0",
+        "confidence_score": 75.0,
+        "strategy_sleeve": "S3_BRACKET_LOCK_YES",
+        "n_contracts": 7,
+        "target_price": 0.95,
+        "stop_price": 0.60,
+        "never_hold_above": 0.99,
+    }
+
+    trade = trader.on_signal(signal)
+
+    assert trade is not None
+    assert trade["contracts"] == 7
+    assert trade["entry_price"] == 0.80
+    trader.check_exits({signal["ticker"]: Decimal("0.96")})
+    rows = trader.db.execute("SELECT * FROM paper_trades WHERE id = ?", (trade["id"],))
+    assert rows[0]["exit_reason"] == "TARGET"
+    assert rows[0]["exit_price"] == 0.95
+
+
+def test_strategy_1_no_overlay_allows_high_no_entry(tmp_path):
+    db_path = tmp_path / "pipeline.db"
+    create_database(str(db_path))
+    trader = PaperTrader(500, str(db_path))
+    signal = {
+        "id": 4,
+        "city": "KNYC",
+        "ticker": "KXHIGHNY-26APR25-B56.5",
+        "target_date": "2026-04-25",
+        "bracket": "56.0-57.0F",
+        "direction": "NO",
+        "market_price": 0.03,
+        "entry_price": 0.97,
+        "model_prob": 0.01,
+        "spread": "0",
+        "confidence_score": 95.0,
+        "strategy_sleeve": "S1_FAR_BRACKET_NO_OVERLAY",
+        "n_contracts": 5,
+        "target_price": 0.99,
+        "stop_price": 0.77,
+    }
+
+    trade = trader.on_signal(signal)
+
+    assert trade is not None
+    assert trade["contracts"] == 5
+    assert trade["direction"] == "NO"
 
 
 def test_bankroll_math_entry_exit(tmp_path):

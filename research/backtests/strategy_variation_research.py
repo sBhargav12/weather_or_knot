@@ -15,12 +15,12 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import scripts.backtest as backtest
-from scripts.backtest import BacktestConfig, BacktestEngine
+import research.backtests.backtest as backtest
+from research.backtests.backtest import BacktestConfig, BacktestEngine
 
 DATA_DIR = ROOT / "data"
 RESEARCH_DIR = DATA_DIR / "research"

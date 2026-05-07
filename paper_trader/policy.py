@@ -4,10 +4,8 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Any
 
+from execution.fill_model import half_spread_for_price, kalshi_fee
 from paper_trader import config_paper
-from execution.fill_model import half_spread_for_price
-from execution.fill_model import kalshi_fee
-
 
 REGIME_PERIODS = [
     ("pre_HGEFS", date.min, date(2024, 12, 16)),
@@ -101,7 +99,9 @@ def regime_multiplier(signal: dict) -> tuple[str, float]:
     regime = regime_for_date(signal.get("target_date"))
     if not config_paper.PAPER_USE_REGIME_SCALING:
         return regime, 1.0
-    return regime, float(config_paper.PAPER_REGIME_MULTIPLIERS.get(regime, config_paper.PAPER_REGIME_MULTIPLIERS["unknown"]))
+    return regime, float(
+        config_paper.PAPER_REGIME_MULTIPLIERS.get(regime, config_paper.PAPER_REGIME_MULTIPLIERS["unknown"])
+    )
 
 
 def final_size_multiplier(signal: dict) -> tuple[str, float, float, float]:
@@ -161,6 +161,10 @@ def estimate_execution_cost_pp(signal: dict) -> float:
 
 
 def min_required_net_edge_pp(sleeve: str, family: str) -> float:
+    if sleeve in {"S3_BRACKET_LOCK_YES", "S1_FAR_BRACKET_NO_OVERLAY"}:
+        return 0.0
+    if sleeve == "LADDER_EVENT":
+        return float(config_paper.PAPER_MIN_NET_EDGE_PP_LADDER)
     if sleeve == "DEEP_TAIL_NO":
         return float(config_paper.PAPER_MIN_NET_EDGE_PP_DEEP_TAIL)
     if config_paper.PAPER_USE_WING_CENTRAL_SPLIT and family != "central":
@@ -180,6 +184,76 @@ def paper_policy_allows_trade(signal: dict) -> PaperPolicyDecision:
     regime, seasonal_mult, regime_mult, final_mult = final_size_multiplier(signal)
     confidence = float(signal.get("confidence_score", 50.0) or 50.0)
 
+    if sleeve == "S3_BRACKET_LOCK_YES":
+        if not config_paper.PAPER_BRACKET_LOCK_ENABLED:
+            return PaperPolicyDecision(
+                False,
+                "suspended_policy",
+                "Strategy 3 BRACKET_LOCK disabled by paper config",
+                sleeve,
+                family,
+                raw_edge,
+                execution_cost,
+                fee_margin,
+                net_edge,
+                required,
+                seasonal_mult,
+                regime,
+                regime_mult,
+                final_mult,
+            )
+        return PaperPolicyDecision(
+            True,
+            "active",
+            "Strategy 3 BRACKET_LOCK accepted by dedicated paper sleeve policy",
+            sleeve,
+            family,
+            raw_edge,
+            execution_cost,
+            fee_margin,
+            net_edge,
+            required,
+            seasonal_mult,
+            regime,
+            regime_mult,
+            final_mult,
+        )
+
+    if sleeve == "S1_FAR_BRACKET_NO_OVERLAY":
+        if not config_paper.PAPER_FAR_BRACKET_NO_OVERLAY_ENABLED:
+            return PaperPolicyDecision(
+                False,
+                "suspended_policy",
+                "Strategy 1 far-bracket NO overlay disabled by paper config",
+                sleeve,
+                family,
+                raw_edge,
+                execution_cost,
+                fee_margin,
+                net_edge,
+                required,
+                seasonal_mult,
+                regime,
+                regime_mult,
+                final_mult,
+            )
+        return PaperPolicyDecision(
+            True,
+            "active",
+            "Strategy 1 far-bracket NO overlay accepted by dedicated paper sleeve policy",
+            sleeve,
+            family,
+            raw_edge,
+            execution_cost,
+            fee_margin,
+            net_edge,
+            required,
+            seasonal_mult,
+            regime,
+            regime_mult,
+            final_mult,
+        )
+
     if config_paper.PAPER_SUSPEND_LOWER_WING and family == "lower_tail":
         return PaperPolicyDecision(
             False,
@@ -197,6 +271,32 @@ def paper_policy_allows_trade(signal: dict) -> PaperPolicyDecision:
             regime_mult,
             final_mult,
         )
+
+    direction = str(signal.get("direction", "YES")).upper()
+    if direction == "YES" and sleeve in {"CORE", "CORE_HGEFS_GUMBEL", "CORE_HGEFS_EMOS"}:
+        gap = signal.get("gap_pp")
+        if gap is not None:
+            gap_f = float(gap)
+            yes_min = float(config_paper.PAPER_YES_MIN_GAP_PP)
+            yes_max = float(config_paper.PAPER_YES_MAX_GAP_PP)
+            if not (yes_min <= gap_f <= yes_max):
+                return PaperPolicyDecision(
+                    False,
+                    "rejected_yes_gap_window",
+                    f"YES gap {gap_f:.1f}pp outside profitable window [{yes_min:.0f},{yes_max:.0f}]pp "
+                    "(leakage-safe backtest: <30pp=26%WR, 30-35pp=100%WR, >35pp=38%WR)",
+                    sleeve,
+                    family,
+                    raw_edge,
+                    execution_cost,
+                    fee_margin,
+                    net_edge,
+                    required,
+                    seasonal_mult,
+                    regime,
+                    regime_mult,
+                    final_mult,
+                )
 
     if sleeve == "TAIL_NO" and not config_paper.PAPER_TAIL_NO_ENABLED:
         return PaperPolicyDecision(
@@ -232,14 +332,32 @@ def paper_policy_allows_trade(signal: dict) -> PaperPolicyDecision:
             regime_mult,
             final_mult,
         )
+    if sleeve == "CORE":
+        entry_price = float(signal.get("entry_price", signal.get("market_price", 0.0)) or 0.0)
+        min_entry = float(config_paper.PAPER_CORE_MIN_ENTRY_PRICE)
+        if entry_price < min_entry:
+            return PaperPolicyDecision(
+                False,
+                "rejected_low_entry_price",
+                f"CORE entry {entry_price:.2f} below paper minimum {min_entry:.2f} "
+                "(25–55c range loses money in backtest; 55–75c wins 78.6%)",
+                sleeve,
+                family,
+                raw_edge,
+                execution_cost,
+                fee_margin,
+                net_edge,
+                required,
+                seasonal_mult,
+                regime,
+                regime_mult,
+                final_mult,
+            )
     if sleeve == "CORE" and confidence < float(config_paper.PAPER_CORE_MIN_CONFIDENCE):
         return PaperPolicyDecision(
             False,
             "rejected_low_core_confidence",
-            (
-                f"CORE confidence {confidence:.1f} below paper minimum "
-                f"{config_paper.PAPER_CORE_MIN_CONFIDENCE:.1f}"
-            ),
+            (f"CORE confidence {confidence:.1f} below paper minimum {config_paper.PAPER_CORE_MIN_CONFIDENCE:.1f}"),
             sleeve,
             family,
             raw_edge,

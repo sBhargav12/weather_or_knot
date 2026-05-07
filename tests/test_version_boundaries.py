@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from scripts.backtest import add_regime_flags
+from research.backtests.backtest import add_regime_flags
 
 
 def test_regime_hgefs_flag():

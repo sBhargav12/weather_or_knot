@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from models.calibration_models import (
+from research.models.calibration_models import (
     EMOSModel,
     HGBRQuantileModel,
+    NGBoostGumbelModel,
     RandomForestDistributionModel,
     bracket_probabilities_from_samples,
     normalize_probability_mass,
@@ -69,3 +70,11 @@ def test_hgbr_quantile_model_runs_and_quantiles_are_monotone():
     assert values == sorted(values)
     probs = model.bracket_probabilities(x[-1], BRACKETS)
     assert abs(sum(probs.values()) - 1.0) < 1e-9
+
+
+def test_ngboost_gumbel_model_runs():
+    x, y = sample_training_data()
+    model = NGBoostGumbelModel(n_estimators=5).fit(x, y)
+    probs = model.bracket_probabilities(x[-1], BRACKETS)
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    assert all(0.0 <= value <= 1.0 for value in probs.values())

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import logging
+import re
+from datetime import UTC, datetime, time as _time, timedelta as _timedelta
 from decimal import Decimal
 from typing import Dict, Optional
 from zoneinfo import ZoneInfo
 
+logger = logging.getLogger(__name__)
+
 import config
 from dashboard.notifications import format_trade_entry, format_trade_exit, notify_phone
 from data_store.db import Database
+from paper_trader import config_paper
 from paper_trader.policy import PaperPolicyDecision, paper_policy_allows_trade
 
 
@@ -17,14 +22,42 @@ def calculate_fees(contracts: int, price: float, order_type: str = "maker") -> f
     return config.taker_fee(contracts, price)
 
 
+def _canonical_sleeve(signal_or_trade: dict) -> str:
+    return str(signal_or_trade.get("strategy_sleeve") or signal_or_trade.get("sleeve") or "CORE_HGEFS_GUMBEL")
+
+
+def _settlement_date_from_ticker(ticker: str) -> str | None:
+    """Parse settlement date from ticker, e.g. KXHIGHNY-26APR29-B58.5 → '2026-04-29'."""
+    try:
+        _, yymmdd, _ = ticker.split("-", 2)
+        year = 2000 + int(yymmdd[:2])
+        month = {
+            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+            "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+        }[yymmdd[2:5].upper()]
+        day = int(yymmdd[5:])
+        from datetime import date
+        return date(year, month, day).isoformat()
+    except Exception:
+        return None
+
+
+def _fixed_contracts(signal: dict) -> int | None:
+    if _canonical_sleeve(signal) not in getattr(config_paper, "PAPER_FIXED_SIZE_SLEEVES", set()):
+        return None
+    try:
+        contracts = int(signal.get("n_contracts") or 0)
+    except (TypeError, ValueError):
+        return None
+    return contracts if contracts > 0 else None
+
+
 class PaperTrader:
     def __init__(self, starting_bankroll: float, db_path: str):
         self.bankroll = float(starting_bankroll)
         self.starting_bankroll = float(starting_bankroll)
         self.db = Database(db_path)
-        self.open_trades: Dict[int, dict] = {
-            int(trade["id"]): trade for trade in self.db.get_open_trades()
-        }
+        self.open_trades: Dict[int, dict] = {int(trade["id"]): trade for trade in self.db.get_open_trades()}
 
     def on_signal(self, signal: dict) -> Optional[dict]:
         policy = paper_policy_allows_trade(signal)
@@ -43,17 +76,26 @@ class PaperTrader:
 
         confidence = float(signal.get("confidence_score", 50.0))
         if confidence < 40.0:
-            return None   # too uncertain to trade
+            return None  # too uncertain to trade
+        sleeve = _canonical_sleeve(signal)
+        if (
+            direction == "YES"
+            and side_price >= float(config.NEVER_HOLD_ABOVE)
+            and sleeve not in config_paper.PAPER_ALLOW_HIGH_ENTRY_SLEEVES
+        ):
+            return None  # entry price already at or above the ceiling; skip
 
-        sizing = self.calculate_position_size(
-            self.bankroll,
-            side_prob,
-            side_price,
-            confidence_score=confidence,
-            size_multiplier=policy.final_size_mult,
-        )
-        if sizing["contracts"] <= 0:
-            return None
+        fixed_contracts = _fixed_contracts(signal)
+        if fixed_contracts is None:
+            sizing = self.calculate_position_size(
+                self.bankroll,
+                side_prob,
+                side_price,
+                confidence_score=confidence,
+                size_multiplier=policy.final_size_mult,
+            )
+            if sizing["contracts"] <= 0:
+                return None
         trade = self.simulate_entry(
             signal=signal,
             current_price=Decimal(str(side_price)),
@@ -65,13 +107,30 @@ class PaperTrader:
     def _has_matching_open_trade(self, signal: dict) -> bool:
         ticker = signal.get("ticker")
         direction = signal.get("direction", "YES")
-        sleeve = signal.get("strategy_sleeve", "CORE_HGEFS_GUMBEL")
-        return any(
-            trade.get("ticker") == ticker
-            and trade.get("direction") == direction
-            and trade.get("strategy_sleeve") == sleeve
+        # Block if already open in same ticker+direction.
+        if any(
+            trade.get("ticker") == ticker and trade.get("direction") == direction
             for trade in self.open_trades.values()
+        ):
+            return True
+        # Block re-entry: if we already closed a position in this ticker+direction
+        # today ET (any reason including STOP), do not re-enter the same day.
+        # entry_time is stored as UTC; compare against ET day via UTC window.
+        _ny = ZoneInfo("America/New_York")
+        _today_et = datetime.now(UTC).astimezone(_ny).date()
+        _start_utc = datetime.combine(_today_et, _time.min, tzinfo=_ny).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        _end_utc = (datetime.combine(_today_et, _time.min, tzinfo=_ny) + _timedelta(days=1)).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        rows = self.db.execute(
+            """
+            SELECT id FROM paper_trades
+            WHERE ticker = ? AND direction = ?
+              AND entry_time >= ? AND entry_time < ?
+              AND exit_time IS NOT NULL
+            LIMIT 1
+            """,
+            (ticker, direction, _start_utc, _end_utc),
         )
+        return len(rows) > 0
 
     def calculate_position_size(
         self,
@@ -135,13 +194,24 @@ class PaperTrader:
         model_prob_yes = float(signal.get("model_prob", 0.0))
         side_prob = model_prob_yes if direction == "YES" else 1.0 - model_prob_yes
         confidence = float(signal.get("confidence_score", 70.0))
-        sizing = self.calculate_position_size(
-            self.bankroll,
-            side_prob,
-            float(effective_entry),
-            confidence_score=confidence,
-            size_multiplier=policy.final_size_mult,
-        )
+        fixed_contracts = _fixed_contracts(signal)
+        if fixed_contracts is not None:
+            sizing = {
+                "kelly_f": 0.0,
+                "quarter_kelly_f": 0.0,
+                "stake": fixed_contracts * float(effective_entry),
+                "contracts": fixed_contracts,
+                "max_allowed": False,
+                "size_multiplier": float(policy.final_size_mult),
+            }
+        else:
+            sizing = self.calculate_position_size(
+                self.bankroll,
+                side_prob,
+                float(effective_entry),
+                confidence_score=confidence,
+                size_multiplier=policy.final_size_mult,
+            )
         contracts = sizing["contracts"]
         if contracts <= 0:
             raise ValueError("signal produced zero-contract paper trade")
@@ -163,6 +233,9 @@ class PaperTrader:
             "maker_fee_entry": maker_fee_entry,
             "slippage_estimate": float(slippage),
             "strategy_sleeve": signal.get("strategy_sleeve", "CORE_HGEFS_GUMBEL"),
+            "target_price": signal.get("target_price"),
+            "stop_price": signal.get("stop_price"),
+            "never_hold_above": signal.get("never_hold_above"),
             "candidate_status": policy.candidate_status,
             "policy_reason": policy.policy_reason,
             "bracket_family": policy.bracket_family,
@@ -221,17 +294,39 @@ class PaperTrader:
                 continue
             current_price = self.current_side_price(trade, current_yes)
             entry = float(trade["entry_price"])
+            target_price = float(trade.get("target_price") or config.TARGET_EXIT_PRICE)
+            sleeve = _canonical_sleeve(trade)
+            stop_price = trade.get("stop_price")
+            if stop_price is None:
+                # DEEP_TAIL_NO: stops disabled — intraday swings on extreme-price
+                # NO contracts trigger stops on correct trades before resolution.
+                if sleeve == "DEEP_TAIL_NO" and getattr(config_paper, "PAPER_DEEP_TAIL_NO_STOP_DISABLED", False):
+                    stop_price = -1.0  # unreachable
+                else:
+                    core_diff = getattr(config_paper, "PAPER_CORE_STOP_DIFF", float(config.STOP_LOSS_DIFF))
+                    stop_price = max(0.0, entry - core_diff)
+            else:
+                stop_price = float(stop_price)
+            never_hold_above = float(trade.get("never_hold_above") or config.NEVER_HOLD_ABOVE)
             reason = None
             exit_price = current_price
-            if dsm_detected:
-                reason = "DSM_CANCEL"
-            elif current_price >= float(config.NEVER_HOLD_ABOVE):
+            direction = trade.get("direction", "YES")
+            # Sleeves designed to hold through CLI settlement — DSM_CANCEL would
+            # exit them 6 min before the confirmation they were entered to capture.
+            _DSM_EXEMPT_SLEEVES = {"S3_BRACKET_LOCK_YES"}
+            sleeve = _canonical_sleeve(trade)
+            if dsm_detected and direction != "NO" and sleeve not in _DSM_EXEMPT_SLEEVES:
+                today_str = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+                settlement = _settlement_date_from_ticker(trade.get("ticker", ""))
+                if settlement is None or settlement <= today_str:
+                    reason = "DSM_CANCEL"
+            elif direction == "YES" and current_price >= never_hold_above:
                 reason = "NEVER_HOLD_ABOVE"
-                exit_price = float(config.NEVER_HOLD_ABOVE)
-            elif current_price >= float(config.TARGET_EXIT_PRICE):
+                exit_price = never_hold_above
+            elif current_price >= target_price and entry < target_price:
                 reason = "TARGET"
-                exit_price = float(config.TARGET_EXIT_PRICE)
-            elif current_price <= max(0.0, entry - float(config.STOP_LOSS_DIFF)):
+                exit_price = target_price
+            elif current_price <= stop_price:
                 reason = "STOP"
             elif self._past_max_hold_time():
                 reason = "TIME_LIMIT"
@@ -252,7 +347,10 @@ class PaperTrader:
         return now.hour > hour or (now.hour == hour and now.minute >= minute)
 
     def _exit_trade(self, trade_id: int, exit_price: float, reason: str) -> None:
-        trade = self.open_trades.pop(trade_id)
+        trade = self.open_trades.pop(trade_id, None)
+        if trade is None:
+            logger.warning("_exit_trade called for unknown trade_id=%s (already closed?)", trade_id)
+            return
         contracts = int(trade["contracts"])
         entry = float(trade["entry_price"])
         gross_pnl = (exit_price - entry) * contracts
@@ -279,12 +377,17 @@ class PaperTrader:
                 gross_pnl,
                 maker_fee_exit,
                 taker_fee_exit,
-                gross_pnl - maker_total,
-                gross_pnl - taker_total,
+                net_maker,
+                net_taker,
                 trade_id,
             ),
         )
-        notify_phone("Paper trade exited", format_trade_exit(trade, exit_price, reason, net_maker), priority="high", tags="moneybag")
+        notify_phone(
+            "Paper trade exited",
+            format_trade_exit(trade, exit_price, reason, net_maker),
+            priority="high",
+            tags="moneybag",
+        )
 
     def settle_trade(self, trade: dict, settlement_temp_f: float) -> None:
         correct = self._direction_correct(trade, settlement_temp_f)
@@ -292,6 +395,8 @@ class PaperTrader:
             "UPDATE paper_trades SET settlement_temp_f = ?, settled_correct = ? WHERE id = ?",
             (settlement_temp_f, int(correct), trade["id"]),
         )
+        # Remove from in-memory dict so a subsequent check_exits cannot re-exit it.
+        self.open_trades.pop(int(trade["id"]), None)
 
     @staticmethod
     def _direction_correct(trade: dict, settlement_temp_f: float) -> bool:
@@ -302,17 +407,22 @@ class PaperTrader:
         elif bracket.startswith("<="):
             in_bracket = settlement_temp_f <= float(bracket[2:].replace("F", ""))
         elif "-" in bracket:
-            lo, hi = bracket.replace("F", "").split("-", 1)
-            in_bracket = float(lo) <= settlement_temp_f <= float(hi)
+            # Regex handles negative bounds like "-10--5F": matches optional-minus + digits.
+            m = re.match(r"^(-?[\d]+(?:\.\d+)?)-(-?[\d]+(?:\.\d+)?)F?$", bracket)
+            if m:
+                in_bracket = float(m.group(1)) <= settlement_temp_f <= float(m.group(2))
         return in_bracket if trade.get("direction") == "YES" else not in_bracket
 
     def get_daily_pnl(self) -> float:
+        # Use an explicit UTC window for today ET so trades at 8–11 PM ET
+        # (which are UTC next-day) are not excluded from the daily risk limit.
+        _ny = ZoneInfo("America/New_York")
+        _today_et = datetime.now(_ny).date()
+        _start = datetime.combine(_today_et, _time.min, tzinfo=_ny).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        _end = (datetime.combine(_today_et, _time.min, tzinfo=_ny) + _timedelta(days=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         rows = self.db.execute(
-            """
-            SELECT COALESCE(SUM(net_pnl_maker), 0) AS pnl
-            FROM paper_trades
-            WHERE date(created_at) = date('now')
-            """
+            "SELECT COALESCE(SUM(net_pnl_maker), 0) AS pnl FROM paper_trades WHERE created_at >= ? AND created_at < ?",
+            (_start, _end),
         )
         return float(rows[0]["pnl"] or 0)
 
@@ -359,4 +469,7 @@ class PaperTrader:
         )
         weekly_pnl = float(weekly_rows[0]["pnl"] or 0)
         weekly_loss = -min(0.0, weekly_pnl)
-        return daily_loss <= self.starting_bankroll * config.MAX_DAILY_LOSS_PCT and weekly_loss <= self.starting_bankroll * config.MAX_WEEKLY_LOSS_PCT
+        return (
+            daily_loss <= self.starting_bankroll * config.MAX_DAILY_LOSS_PCT
+            and weekly_loss <= self.starting_bankroll * config.MAX_WEEKLY_LOSS_PCT
+        )

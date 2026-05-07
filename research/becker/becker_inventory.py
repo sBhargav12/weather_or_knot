@@ -12,7 +12,7 @@ import duckdb
 import pyarrow.parquet as pq
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = ROOT / "data" / "kalshi"
 RESEARCH_DIR = ROOT / "data" / "research"
 REPORTS_DIR = ROOT / "reports"

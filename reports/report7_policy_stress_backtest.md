@@ -1,8 +1,8 @@
 # Deep Research Report 7 Policy Stress Backtest
 
-Generated: 2026-04-27T02:03:45
+Generated: 2026-05-01T13:38:18
 
-Git SHA: `5348b7a`
+Git SHA: `d892deb`
 
 Input: `data/backtest_results.csv`
 
@@ -24,11 +24,11 @@ order-book/action data or a separate forecast-vintage-aware model bakeoff.
 
 | Policy | Trades | Days | Win Rate | Δ Win Rate | Net 0c | Net +1c | Net +3c | Net +5c | Avg Size Mult |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| current_strategy | 973 | 460 | 74.5% | +0.0pp | $55.77 | $36.31 | $-2.61 | $-40.28 | 0.64 |
-| paper_net_edge_policy | 842 | 438 | 71.1% | -3.4pp | $55.12 | $38.28 | $4.60 | $-29.08 | 0.63 |
-| paper_net_edge_sized | 842 | 438 | 71.1% | -3.4pp | $58.21 | $47.54 | $26.18 | $4.83 | 0.63 |
-| report7_lower_tail_caution | 761 | 413 | 73.3% | -1.2pp | $63.91 | $48.69 | $18.25 | $-12.19 | 0.64 |
-| report7_strict_selection | 589 | 350 | 80.0% | +5.5pp | $71.89 | $60.11 | $36.55 | $12.99 | 0.63 |
+| current_strategy | 973 | 460 | 74.5% | +0.0pp | $55.77 | $36.31 | $-2.61 | $-40.28 | 0.62 |
+| paper_net_edge_policy | 842 | 438 | 71.1% | -3.4pp | $55.12 | $38.28 | $4.60 | $-29.08 | 0.62 |
+| paper_net_edge_sized | 842 | 438 | 71.1% | -3.4pp | $56.28 | $45.82 | $24.92 | $4.01 | 0.62 |
+| report7_lower_tail_caution | 761 | 413 | 73.3% | -1.2pp | $63.91 | $48.69 | $18.25 | $-12.19 | 0.63 |
+| report7_strict_selection | 589 | 350 | 80.0% | +5.5pp | $71.89 | $60.11 | $36.55 | $12.99 | 0.61 |
 
 ## Strict Policy By Sleeve
 

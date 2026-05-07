@@ -11,11 +11,11 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import config_paper
+from paper_trader import config_paper
 from execution.fill_model import HALF_SPREADS, kalshi_fee
 from paper_trader.policy import regime_for_date
 

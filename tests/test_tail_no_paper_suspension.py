@@ -61,3 +61,21 @@ def test_deep_tail_no_remains_eligible():
     decision = paper_policy_allows_trade(signal)
     assert decision.allowed
     assert decision.candidate_status == "active"
+
+
+def test_ladder_event_high_price_no_is_eligible():
+    signal = {
+        "strategy_sleeve": "LADDER_EVENT",
+        "direction": "NO",
+        "model_prob": 0.03,
+        "entry_price": 0.90,
+        "market_price": 0.10,
+        "gap_pp": 7.0,
+        "spread": "0.00",
+        "bracket": "70-72F",
+        "target_date": "2026-04-25",
+        "confidence_score": 45,
+    }
+    decision = paper_policy_allows_trade(signal)
+    assert decision.allowed
+    assert decision.candidate_status == "active"

@@ -1,16 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/bin/pip install *)",
-      "Bash(brew install *)",
-      "Bash(.venv/bin/python3 -c \"import eccodes; print\\(eccodes.__version__\\)\")",
-      "Bash(uv add *)",
-      "Bash(.venv/bin/python3 -c ' *)",
-      "Bash(.venv/bin/python -m pytest tests/ -v --tb=short)",
-      "Read(//Users/bhargavsukhavasi/**)",
-      "Read(//Users/bhargavsukhavasi/.ssh/**)",
-      "Bash(export TENANCY_OCID=\"ocid1.tenancy.oc1..aaaaaaaadjqpvibvsxpmbxpv2k6edjl6tsbar6sr6j7ztpvd7hdd3orw3sda\")",
-      "Bash(oci compute *)"
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__ide__executeCode",
+      "mcp__ide__getDiagnostics",
+      "mcp__context-mode__ctx_fetch_and_index",
+      "mcp__context-mode__ctx_batch_execute",
+      "mcp__context-mode__ctx_search"
+    ],
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "/Users/bhargavsukhavasi/.claude"
     ]
   }
 }

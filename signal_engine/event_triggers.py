@@ -72,8 +72,10 @@ class EventTriggerEngine:
         for city, cfg in config.CITIES.items():
             if cfg.get("active"):
                 model = LiveEMOSModel(city_code=city)
-                model.train()
-                self.emos[city] = model
+                if model.train():
+                    self.emos[city] = model
+                else:
+                    logger.warning("LiveEMOSModel training failed for %s — city excluded from EMOS sleeve", city)
         self.weather_memory: Optional[WeatherMemoryLog] = (
             WeatherMemoryLog(db) if _cp.PAPER_WEATHER_MEMORY_ENABLED else None
         )
@@ -372,6 +374,28 @@ class EventTriggerEngine:
                             "raw_json": cli_data.get("raw_json"),
                         }
                     )
+                    # Mark settled_correct on all paper trades for yesterday's target date.
+                    # This is metadata-only; PnL was already recorded by DSM_CANCEL/TIME_LIMIT.
+                    # Any trade still open at this point (TIME_LIMIT missed) is also closed here.
+                    cli_high = float(cli_data["cli_high_f"])
+                    all_yesterday = self.db.execute(
+                        "SELECT * FROM paper_trades WHERE city = ? AND target_date = ?",
+                        (city, yesterday),
+                    )
+                    for row in all_yesterday:
+                        trade = dict(row)
+                        self.paper_trader.settle_trade(trade, cli_high)
+                        if trade.get("exit_time") is None:
+                            # Safety net: close trades missed by TIME_LIMIT
+                            correct = self.paper_trader._direction_correct(trade, cli_high)
+                            settlement_exit_price = 1.0 if correct else 0.0
+                            self.paper_trader._exit_trade(
+                                int(trade["id"]), settlement_exit_price, "CLI_SETTLEMENT"
+                            )
+                            logger.info(
+                                "CLI_SETTLEMENT fallback exit for trade %s %s correct=%s",
+                                trade["id"], trade.get("ticker"), correct,
+                            )
             except Exception as exc:
                 logger.warning("CLI update failed for %s: %s", city, exc)
 
@@ -427,13 +451,16 @@ class EventTriggerEngine:
             # 12:40 PM ET — 12Z GFS peak model run trigger (most important of the day)
             peak_key = (now.date().isoformat(), "peak_model_run_12z")
             if peak_key not in self.daily_completed and now.time() >= self._parse_et_time(config.PEAK_MODEL_RUN_ET):
-                self.daily_completed.add(peak_key)
                 logger.info("Peak model run window (12:40 PM ET) — triggering gate checks")
+                all_ok = True
                 for city, _ in self._active_cities():
                     try:
                         await self.fire_gate_check(city, "peak_model_run_12z")
                     except Exception as exc:
                         logger.warning("peak_model_run gate check failed for %s: %s", city, exc)
+                        all_ok = False
+                if all_ok:
+                    self.daily_completed.add(peak_key)
 
             # 10:00 AM ET — Strategy 2 ladder event window.
             # This uses the same model/probability pass as core, but creates a
@@ -441,26 +468,32 @@ class EventTriggerEngine:
             # 9:00–10:30 AM entry window.
             ladder_key = (now.date().isoformat(), "ladder_event_10am")
             if ladder_key not in self.daily_completed and now.time() >= self._parse_et_time(config.LADDER_EVENT_RUN_ET):
-                self.daily_completed.add(ladder_key)
                 logger.info("Strategy 2 ladder window (10:00 AM ET) — triggering event-level checks")
+                all_ok = True
                 for city, _ in self._active_cities():
                     try:
                         await self.fire_gate_check(city, "ladder_event_10am")
                     except Exception as exc:
                         logger.warning("ladder_event gate check failed for %s: %s", city, exc)
+                        all_ok = False
+                if all_ok:
+                    self.daily_completed.add(ladder_key)
 
             # 3:00 PM ET — bracket-lock confirmation window
             # Running ASOS daily max is reliable at this point; enter the confirmed bracket
             # before DSM fires at 4:21 PM and reprices it to 95c.
             lock_key = (now.date().isoformat(), "bracket_lock_3pm")
             if lock_key not in self.daily_completed and now.time() >= self._parse_et_time(config.BRACKET_LOCK_RUN_ET):
-                self.daily_completed.add(lock_key)
                 logger.info("Bracket-lock window (3:00 PM ET) — checking intraday confirmed high")
+                all_ok = True
                 for city, _ in self._active_cities():
                     try:
                         await self.fire_bracket_lock_check(city)
                     except Exception as exc:
                         logger.warning("bracket_lock check failed for %s: %s", city, exc)
+                        all_ok = False
+                if all_ok:
+                    self.daily_completed.add(lock_key)
 
             # Weekly: refresh model accuracy on Mondays at 06:00 ET
             if now.weekday() == 0:
@@ -916,7 +949,17 @@ class EventTriggerEngine:
 
         cfg = config.CITIES[city]
         station = cfg["wethr_station"]
-        today_str = now_et.date().isoformat()
+
+        # Use city's local time for the 3 PM check so KMDW (CT) waits until
+        # 3 PM CT (= 4 PM ET) instead of firing at 3 PM ET (= 2 PM CT) before
+        # Chicago's daily high is established.
+        city_tz = ZoneInfo(cfg.get("timezone", "America/New_York"))
+        now_local = datetime.now(city_tz)
+        if now_local.time() < dt_time(15, 0):
+            logger.debug("bracket_lock skipped for %s — not yet 3 PM local (%s)", city, now_local.strftime("%H:%M %Z"))
+            return
+
+        today_str = now_local.date().isoformat()
 
         # Step 1: Get running daily max from latest METAR obs
         obs_rows = self.db.execute(
@@ -1348,6 +1391,27 @@ class EventTriggerEngine:
         t = now_et.time()
         return dt_time(16, 15) <= t <= dt_time(18, 30)
 
+    def _get_last_known_yes_price(self, ticker: str) -> float | None:
+        """Return the most recently stored yes price for ticker (no recency filter)."""
+        rows = self.db.execute(
+            """
+            SELECT yes_last, yes_ask, yes_bid FROM kalshi_prices
+            WHERE ticker = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (ticker,),
+        )
+        if not rows:
+            return None
+        for col in ("yes_last", "yes_ask", "yes_bid"):
+            val = rows[0][col]
+            if val is not None:
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    continue
+        return None
+
     def _enforce_time_exits(self, now_et: datetime) -> None:
         """Force-close all open trades at 11 PM ET."""
         if now_et.time() < dt_time(23, 0):
@@ -1355,28 +1419,35 @@ class EventTriggerEngine:
         current_prices = self._get_current_prices()
 
         for trade in self.db.get_open_trades():
-            yes_price = current_prices.get(trade["ticker"])
-            price = (
-                self.paper_trader.current_side_price(trade, yes_price)
-                if yes_price is not None
-                else float(trade.get("entry_price", 0))
-            )
-            self.paper_trader._exit_trade(trade["id"], price, "TIME_LIMIT")
-            logger.info("TIME_LIMIT paper exit for %s at %.2f", trade["ticker"], price)
+            ticker = trade["ticker"]
+            yes_price = current_prices.get(ticker) or self._get_last_known_yes_price(ticker)
+            if yes_price is not None:
+                price = self.paper_trader.current_side_price(trade, yes_price)
+                reason = "TIME_LIMIT"
+            else:
+                # Truly no price ever stored — exit at entry_price and flag clearly
+                price = float(trade.get("entry_price", 0))
+                reason = "TIME_LIMIT_NO_PRICE"
+                logger.warning("TIME_LIMIT for %s: no stored price found, exiting at entry_price=%.2f", ticker, price)
+            self.paper_trader._exit_trade(trade["id"], price, reason)
+            logger.info("TIME_LIMIT paper exit for %s at %.2f (reason=%s)", ticker, price, reason)
 
         if self.live_trader is None:
             return
         for trade in self.db.get_open_live_trades():
-            yes_price = current_prices.get(trade["ticker"])
-            price = (
-                self.live_trader.current_side_price(trade, yes_price)
-                if yes_price is not None
-                else float(trade.get("entry_price", 0))
-            )
+            ticker = trade["ticker"]
+            yes_price = current_prices.get(ticker) or self._get_last_known_yes_price(ticker)
+            if yes_price is not None:
+                price = self.live_trader.current_side_price(trade, yes_price)
+                reason = "TIME_LIMIT"
+            else:
+                price = float(trade.get("entry_price", 0))
+                reason = "TIME_LIMIT_NO_PRICE"
+                logger.warning("TIME_LIMIT live for %s: no stored price found, exiting at entry_price=%.2f", ticker, price)
             order_status = trade.get("order_status", "resting")
             filled_count = int(trade.get("filled_count", 0) or 0)
-            self.live_trader._exit_trade(int(trade["id"]), price, "TIME_LIMIT", order_status, filled_count)
-            logger.info("TIME_LIMIT live exit for %s at %.2f", trade["ticker"], price)
+            self.live_trader._exit_trade(int(trade["id"]), price, reason, order_status, filled_count)
+            logger.info("TIME_LIMIT live exit for %s at %.2f (reason=%s)", ticker, price, reason)
 
     def _log_candidate(
         self, city: str, bracket: dict, target_date: str, gate: dict, prob: float, market_price: float, hgefs_like: dict
@@ -1694,6 +1765,14 @@ class EventTriggerEngine:
 
     def _hgefs_or_fallback(self, city: str, models: dict, target_date: Optional[str] = None) -> dict:
         latest = self.db.get_model_run_latest(city, "HGEFS")
+        if latest and target_date and latest.get("target_date") != target_date:
+            logger.warning(
+                "HGEFS run for %s targets %s, not %s — stale model data, treating as missing",
+                city,
+                latest.get("target_date"),
+                target_date,
+            )
+            latest = None
         if latest and latest.get("physics_mean") is not None:
             raw = json.loads(latest.get("raw_data_json") or "{}")
             result = dict(latest)
@@ -1748,18 +1827,18 @@ class EventTriggerEngine:
 
     def _latest_nbm(self, city: str, target_date: Optional[str] = None) -> dict:
         if target_date is None:
-            latest = self.db.get_model_run_latest(city, "NBM_BULLETIN")
-        else:
-            rows = self.db.execute(
-                """
-                SELECT * FROM model_runs
-                WHERE city = ? AND model = ? AND target_date = ?
-                ORDER BY run_time DESC, created_at DESC
-                LIMIT 1
-                """,
-                (city, "NBM_BULLETIN", target_date),
-            )
-            latest = dict(rows[0]) if rows else None
+            logger.warning("_latest_nbm called without target_date for %s — skipping to avoid stale data", city)
+            return {}
+        rows = self.db.execute(
+            """
+            SELECT * FROM model_runs
+            WHERE city = ? AND model = ? AND target_date = ?
+            ORDER BY run_time DESC, created_at DESC
+            LIMIT 1
+            """,
+            (city, "NBM_BULLETIN", target_date),
+        )
+        latest = dict(rows[0]) if rows else None
         if latest and latest.get("nbm_p50") is not None:
             raw = json.loads(latest.get("raw_data_json") or "{}")
             return {

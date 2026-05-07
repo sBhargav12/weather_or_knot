@@ -55,6 +55,29 @@ def test_gate_1_insufficient_models():
     assert passed is False
 
 
+def test_gate_1_nbm_hard_block():
+    # HGEFS says 70.6°F, NBM says 50°F → 20°F gap ≥ 15°F threshold → hard block
+    passed, d = check_gate_1(71.0, 1.0, 70.2, 1.0, nbm_p50=50.0)
+    assert passed is False
+    assert "nbm_hgefs_gap" in d["reason"]
+    assert d["nbm_hgefs_gap_f"] >= 15.0
+
+
+def test_gate_1_nbm_penalty_no_block():
+    # 10°F gap → confidence penalty applied but gate still passes
+    passed, d = check_gate_1(71.0, 1.0, 70.2, 1.0, nbm_p50=61.0)
+    assert passed is True
+    assert d["confidence_add"] == 30.0 - 30.0   # 30 base + -30 penalty = 0
+    assert 8.0 <= d["nbm_hgefs_gap_f"] < 15.0
+
+
+def test_gate_1_nbm_small_gap_no_penalty():
+    # 3°F gap → no penalty, full +30 confidence
+    passed, d = check_gate_1(71.0, 1.0, 70.2, 1.0, nbm_p50=67.5)
+    assert passed is True
+    assert d["confidence_add"] == 30.0
+
+
 # ---------------------------------------------------------------------------
 # Gate 2 — TIER 1 (hard requirement, gap > config.MIN_GAP_PP)
 # ---------------------------------------------------------------------------
@@ -140,10 +163,10 @@ def test_gate_5_always_passes():
     p, d = check_gate_5(61.0, 70.0, "YES")
     assert p is True
     assert d["confidence_delta"] == -15.0
-    # Missing METAR — neutral
+    # Missing METAR — small penalty (-10) to match AGENTS: "missing = skip"
     p, d = check_gate_5(None, 70.0, "YES")
     assert p is True
-    assert d["confidence_delta"] == 0.0
+    assert d["confidence_delta"] == -10.0
 
 
 def test_gate_5_no_direction():

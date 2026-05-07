@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from features.bracket_targets import build_feature_matrix
+from research.features.bracket_targets import build_feature_matrix
 from models.distributional_temp import DistributionalTempModel
 
 

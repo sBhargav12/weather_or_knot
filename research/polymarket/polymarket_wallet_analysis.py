@@ -52,7 +52,7 @@ import requests
 from scipy.stats import gumbel_r
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "data" / "wallet_analysis"
 PRICE_CACHE_DIR = OUT_DIR / "price_cache"
 MARKET_CACHE_PATH = OUT_DIR / "market_cache.json"

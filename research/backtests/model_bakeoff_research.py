@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import subprocess
@@ -12,24 +13,44 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from models.calibration_models import EMOSModel, HGBRQuantileModel, RandomForestDistributionModel
+import config
+from research.models.calibration_models import (
+    EMOSModel,
+    EMOSGumbelModel,
+    EMOSGumbelHeteroModel,
+    HGBRQuantileModel,
+    IDRTemperatureModel,
+    NGBoostGumbelModel,
+    NGBoostModel,
+    RandomForestDistributionModel,
+)
 from models.distributional_temp import DistributionalTempModel
 
 
 DATA_DIR = ROOT / "data"
 RESEARCH_DIR = DATA_DIR / "research"
 REPORTS_DIR = ROOT / "reports"
-MARKETS_CSV = DATA_DIR / "kxhighny_markets.csv"
-PRICES_CSV = DATA_DIR / "kxhighny_prices.csv"
-MODELS_CSV = DATA_DIR / "open_meteo_historical.csv"
-OUT_PREDICTIONS = RESEARCH_DIR / "model_bakeoff_predictions.csv"
-OUT_TRADES = RESEARCH_DIR / "model_bakeoff_strategy_trades.csv"
-OUT_SUMMARY = RESEARCH_DIR / "model_bakeoff_summary.json"
-OUT_REPORT = REPORTS_DIR / "model_bakeoff_research.md"
+
+# City-specific paths — overridden in main() by --city
+CITY_CODE: str = "KNYC"
+SERIES_TICKER: str = "KXHIGHNY"
+MARKETS_CSV: Path = DATA_DIR / "kxhighny_markets.csv"
+PRICES_CSV: Path = DATA_DIR / "kxhighny_prices.csv"
+MODELS_CSV: Path = DATA_DIR / "open_meteo_historical_extended.csv"
+ACTUALS_CSV: Path = DATA_DIR / "knyc_actual_temps_extended.csv"
+OUT_PREDICTIONS: Path = RESEARCH_DIR / "model_bakeoff_predictions.csv"
+OUT_TRADES: Path = RESEARCH_DIR / "model_bakeoff_strategy_trades.csv"
+OUT_SUMMARY: Path = RESEARCH_DIR / "model_bakeoff_summary.json"
+OUT_REPORT: Path = REPORTS_DIR / "model_bakeoff_research.md"
+
+# Dates on/after this are real operational forecasts; earlier = ERA5 hindcast
+REAL_FORECAST_CUTOFF = pd.Timestamp("2024-10-01")
+# Hindcast rows are down-weighted so the model anchors bias magnitude on real forecasts
+HINDCAST_WEIGHT = 0.5
 
 FEATURES = [
     "gfs_maxt",
@@ -46,7 +67,7 @@ FEATURES = [
 ]
 
 TRAIN_MIN_DAYS = 120
-EVAL_STRIDE_DAYS = 7
+EVAL_STRIDE_DAYS = 1
 ENTRY_COL = "yes_price_9AM"
 
 
@@ -86,14 +107,34 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame]:
     markets = pd.read_csv(MARKETS_CSV)
     prices = pd.read_csv(PRICES_CSV)
     forecasts = pd.read_csv(MODELS_CSV).rename(columns={"date": "target_date"})
+    actuals = pd.read_csv(ACTUALS_CSV).rename(columns={"date": "target_date", "max_temp_f": "actual_temp"})
 
+    model_cols = ["gfs_maxt", "ecmwf_maxt", "ukmo_maxt", "nbm_maxt"]
+
+    # Require at least GFS (always available); fill other models with row mean
+    forecasts = forecasts[forecasts["gfs_maxt"].notna()].copy()
+    row_mean = forecasts[model_cols].mean(axis=1)
+    for col in model_cols:
+        forecasts[col] = forecasts[col].fillna(row_mean)
+
+    # Actuals: prefer extended file (IEM); fall back to markets settlement temp
     markets["kalshi_result_yes"] = markets["settlement_value"].astype(str).str.lower().eq("yes")
-    winners = markets[markets["kalshi_result_yes"] & markets["raw_settlement_temp"].notna()][
-        ["target_date", "raw_settlement_temp"]
-    ].drop_duplicates("target_date")
-    daily = forecasts.merge(winners, on="target_date", how="inner").dropna(
-        subset=["gfs_maxt", "ecmwf_maxt", "ukmo_maxt", "nbm_maxt", "raw_settlement_temp"]
+    kalshi_actuals = (
+        markets[markets["kalshi_result_yes"] & markets["raw_settlement_temp"].notna()][
+            ["target_date", "raw_settlement_temp"]
+        ]
+        .drop_duplicates("target_date")
+        .rename(columns={"raw_settlement_temp": "actual_temp"})
     )
+    # Merge forecasts with extended actuals first, then fill gaps from Kalshi settlement
+    daily = forecasts.merge(actuals, on="target_date", how="left")
+    missing_mask = daily["actual_temp"].isna()
+    if missing_mask.any():
+        daily = daily.merge(kalshi_actuals, on="target_date", how="left", suffixes=("", "_kalshi"))
+        daily["actual_temp"] = daily["actual_temp"].fillna(daily["actual_temp_kalshi"])
+        daily = daily.drop(columns=["actual_temp_kalshi"], errors="ignore")
+    daily = daily.dropna(subset=["actual_temp"])
+
     daily["target_date"] = pd.to_datetime(daily["target_date"])
     daily = daily.sort_values("target_date").reset_index(drop=True)
     daily["physics_mean"] = daily[["gfs_maxt", "ecmwf_maxt"]].mean(axis=1)
@@ -105,10 +146,12 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame]:
         + 0.20 * daily["ukmo_maxt"]
         + 0.20 * daily["nbm_maxt"]
     )
-    daily["model_spread"] = daily[["gfs_maxt", "ecmwf_maxt", "ukmo_maxt", "nbm_maxt"]].std(axis=1)
+    daily["model_spread"] = daily[model_cols].std(axis=1)
     daily["month"] = daily["target_date"].dt.month
     daily["day_of_year"] = daily["target_date"].dt.dayofyear
     daily["date"] = daily["target_date"].dt.strftime("%Y-%m-%d")
+    # Recency weight: real operational forecasts weighted 2x vs ERA5 hindcast
+    daily["sample_weight"] = np.where(daily["target_date"] >= REAL_FORECAST_CUTOFF, 1.0, HINDCAST_WEIGHT)
 
     rows = markets.merge(prices, on=["ticker", "target_date"], how="left")
     rows = rows.merge(daily[["date", *FEATURES]], left_on="target_date", right_on="date", how="inner")
@@ -134,9 +177,26 @@ def gumbel_probs(row: pd.Series, day_group: pd.DataFrame) -> dict[str, float]:
     return dist.bracket_probabilities(float(row["consensus"]), brackets_for_day(day_group))
 
 
-def fit_predict_model(model_name: str, train_x: np.ndarray, train_y: np.ndarray, test_x: np.ndarray, brackets: list[dict]) -> dict:
+def fit_predict_model(
+    model_name: str,
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    test_x: np.ndarray,
+    brackets: list[dict],
+    sample_weight: np.ndarray | None = None,
+) -> dict:
     if model_name == "EMOS":
-        return EMOSModel().fit(train_x, train_y).bracket_probabilities(test_x, brackets)
+        return EMOSModel().fit(train_x, train_y, sample_weight=sample_weight).bracket_probabilities(test_x, brackets)
+    if model_name == "EMOS_GUMBEL":
+        return EMOSGumbelModel().fit(train_x, train_y, sample_weight=sample_weight).bracket_probabilities(test_x, brackets)
+    if model_name == "EMOS_GUMBEL_HETERO":
+        return EMOSGumbelHeteroModel().fit(train_x, train_y, sample_weight=sample_weight).bracket_probabilities(test_x, brackets)
+    if model_name == "IDR":
+        return IDRTemperatureModel().fit(train_x, train_y, sample_weight=sample_weight).bracket_probabilities(test_x, brackets)
+    if model_name == "NGBOOST":
+        return NGBoostModel(n_estimators=100).fit(train_x, train_y).bracket_probabilities(test_x, brackets)
+    if model_name == "NGBOOST_GUMBEL":
+        return NGBoostGumbelModel(n_estimators=100).fit(train_x, train_y).bracket_probabilities(test_x, brackets)
     if model_name == "RF_DISTRIBUTION":
         return RandomForestDistributionModel(n_estimators=60, min_samples_leaf=6).fit(train_x, train_y).bracket_probabilities(test_x, brackets)
     if model_name == "HGBR_QUANTILE":
@@ -147,7 +207,17 @@ def fit_predict_model(model_name: str, train_x: np.ndarray, train_y: np.ndarray,
 def rolling_predictions(daily: pd.DataFrame, rows: pd.DataFrame) -> pd.DataFrame:
     predictions = []
     daily = daily.reset_index(drop=True)
-    model_names = ["GUMBEL", "EMOS", "RF_DISTRIBUTION", "HGBR_QUANTILE"]
+    model_names = [
+        "GUMBEL",
+        "EMOS",
+        "EMOS_GUMBEL",
+        "EMOS_GUMBEL_HETERO",
+        "IDR",
+        "NGBOOST",
+        "NGBOOST_GUMBEL",
+        "RF_DISTRIBUTION",
+        "HGBR_QUANTILE",
+    ]
     for idx in range(TRAIN_MIN_DAYS, len(daily), EVAL_STRIDE_DAYS):
         train = daily.iloc[:idx]
         test = daily.iloc[idx]
@@ -157,12 +227,15 @@ def rolling_predictions(daily: pd.DataFrame, rows: pd.DataFrame) -> pd.DataFrame
             continue
         brackets = brackets_for_day(day_group)
         train_x = train[FEATURES].to_numpy(dtype=float)
-        train_y = train["raw_settlement_temp"].to_numpy(dtype=float)
+        train_y = train["actual_temp"].to_numpy(dtype=float)
+        train_w = train["sample_weight"].to_numpy(dtype=float) if "sample_weight" in train.columns else None
         test_x = test[FEATURES].to_numpy(dtype=float)
         probs_by_model = {"GUMBEL": gumbel_probs(test, day_group)}
+        _weighted = {"EMOS", "EMOS_GUMBEL", "EMOS_GUMBEL_HETERO", "IDR"}
         for model_name in model_names[1:]:
             try:
-                probs_by_model[model_name] = fit_predict_model(model_name, train_x, train_y, test_x, brackets)
+                weight = train_w if model_name in _weighted else None
+                probs_by_model[model_name] = fit_predict_model(model_name, train_x, train_y, test_x, brackets, sample_weight=weight)
             except Exception as exc:
                 print(f"WARNING: {model_name} failed for {day}: {exc}")
                 continue
@@ -290,6 +363,41 @@ def markdown_table(df: pd.DataFrame) -> str:
 
 
 def main() -> None:
+    global CITY_CODE, SERIES_TICKER, MARKETS_CSV, PRICES_CSV, MODELS_CSV, ACTUALS_CSV
+    global OUT_PREDICTIONS, OUT_TRADES, OUT_SUMMARY, OUT_REPORT
+
+    parser = argparse.ArgumentParser(description="Model bakeoff (GUMBEL vs EMOS vs RF vs HGBR) for a city.")
+    parser.add_argument("--city", default="KNYC", help="Station code from config.CITIES (e.g. KNYC, KMDW).")
+    args = parser.parse_args()
+
+    if args.city not in config.CITIES:
+        print(f"Unknown city '{args.city}'. Valid: {list(config.CITIES.keys())}", file=sys.stderr)
+        sys.exit(2)
+
+    city_cfg = config.CITIES[args.city]
+    CITY_CODE = args.city
+    SERIES_TICKER = city_cfg["series_ticker"]
+    city_lower = args.city.lower()
+    series_lower = SERIES_TICKER.lower()
+
+    MARKETS_CSV = DATA_DIR / f"{series_lower}_markets.csv"
+    PRICES_CSV = DATA_DIR / f"{series_lower}_prices.csv"
+
+    if args.city == "KNYC":
+        _ext_models = DATA_DIR / "open_meteo_historical_extended.csv"
+        _ext_actuals = DATA_DIR / "knyc_actual_temps_extended.csv"
+    else:
+        _ext_models = DATA_DIR / f"open_meteo_{city_lower}_historical_extended.csv"
+        _ext_actuals = DATA_DIR / f"{city_lower}_actual_temps_extended.csv"
+    MODELS_CSV = _ext_models if _ext_models.exists() else DATA_DIR / f"open_meteo_{city_lower}_historical.csv"
+    ACTUALS_CSV = _ext_actuals if _ext_actuals.exists() else DATA_DIR / f"{city_lower}_actual_temps.csv"
+
+    city_tag = city_lower.lstrip("k")  # kmdw -> mdw, knyc -> nyc
+    OUT_PREDICTIONS = RESEARCH_DIR / f"model_bakeoff_{city_tag}_predictions.csv"
+    OUT_TRADES = RESEARCH_DIR / f"model_bakeoff_{city_tag}_strategy_trades.csv"
+    OUT_SUMMARY = RESEARCH_DIR / f"model_bakeoff_{city_tag}_summary.json"
+    OUT_REPORT = REPORTS_DIR / f"model_bakeoff_{city_tag}_research.md"
+
     RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     daily, rows = build_dataset()
@@ -325,10 +433,15 @@ Git SHA: `{summary['git_sha']}`
 This is a research-only implementation of the valid parts of
 `/Users/bhargavsukhavasi/Downloads/deep-research-report (8).md`.
 
-It compares the current coherent Gumbel baseline against three offline
+It compares the current coherent Gumbel baseline against seven offline
 post-processing models:
 
 - `EMOS`: linear bias correction plus residual normal spread,
+- `EMOS_GUMBEL`: EMOS with Gumbel predictive distribution (OLS mu, beta from residual std * sqrt(6)/pi, loc shifted by Euler gamma),
+- `EMOS_GUMBEL_HETERO`: EMOS-Gumbel with spread-linked heteroscedastic beta (beta = c + d*model_spread),
+- `IDR`: Isotonic Distributional Regression on consensus temperature (Henzi et al. 2021),
+- `NGBOOST`: Natural Gradient Boosting with Normal distribution (Duan et al. 2020), 100 trees,
+- `NGBOOST_GUMBEL`: Natural Gradient Boosting with Gumbel distribution, 100 trees,
 - `RF_DISTRIBUTION`: random-forest tree-prediction empirical distribution,
 - `HGBR_QUANTILE`: histogram gradient boosting quantile distribution.
 

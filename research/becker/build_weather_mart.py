@@ -13,8 +13,8 @@ import pandas as pd
 from scipy.stats import gumbel_r
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SQL_PATH = ROOT / "research" / "sql" / "weather_mart.sql"
+ROOT = Path(__file__).resolve().parents[2]
+SQL_PATH = ROOT / "research" / "becker" / "sql" / "weather_mart.sql"
 DATA_DIR = ROOT / "data"
 RESEARCH_DIR = DATA_DIR / "research"
 REPORTS_DIR = ROOT / "reports"

@@ -91,8 +91,17 @@ class KalshiClient:
     def get_active_markets(self, series: str) -> list:
         # Kalshi's current API uses "open" for tradable markets; older docs called
         # this "active". Keep the method name aligned with the pipeline plan.
-        data = self._get("/markets", {"series_ticker": series, "status": "open", "limit": 200})
-        return data.get("markets", [])
+        markets: list = []
+        cursor: str | None = None
+        while True:
+            params = {"series_ticker": series, "status": "open", "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get("/markets", params)
+            markets.extend(data.get("markets", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                return markets
 
     def get_orderbook(self, ticker: str) -> dict:
         data = self._get(f"/markets/{ticker}/orderbook")
@@ -110,14 +119,75 @@ class KalshiClient:
         data = self._get("/markets/trades", {"ticker": ticker, "limit": limit})
         return data.get("trades", [])
 
+    def _post(self, path: str, body: dict) -> dict:
+        sign_path = path if path.startswith("/trade-api/v2") else f"/trade-api/v2{path}"
+        headers = self._sign_request("POST", sign_path)
+        url = f"{self.base_url}{path}"
+        response = self.session.post(url, headers=headers, json=body, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    def _delete(self, path: str) -> dict:
+        sign_path = path if path.startswith("/trade-api/v2") else f"/trade-api/v2{path}"
+        headers = self._sign_request("DELETE", sign_path)
+        url = f"{self.base_url}{path}"
+        response = self.session.delete(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    def place_order(
+        self,
+        ticker: str,
+        side: str,
+        count: int,
+        yes_price_cents: int,
+        action: str = "buy",
+        client_order_id: str | None = None,
+    ) -> dict:
+        """Place a limit order. yes_price_cents is 1-99 (always the YES side price)."""
+        body: dict = {
+            "ticker": ticker,
+            "type": "limit",
+            "action": action,
+            "side": side.lower(),
+            "count": count,
+            "yes_price": yes_price_cents,
+            "expiration_ts": 0,
+        }
+        if client_order_id:
+            body["client_order_id"] = client_order_id
+        data = self._post("/portfolio/orders", body)
+        return data.get("order", data)
+
+    def cancel_order(self, order_id: str) -> dict:
+        data = self._delete(f"/portfolio/orders/{order_id}")
+        return data.get("order", data)
+
+    def get_order(self, order_id: str) -> dict:
+        data = self._get(f"/portfolio/orders/{order_id}")
+        return data.get("order", data)
+
+    def get_open_orders(self, ticker: str | None = None) -> list:
+        params: dict = {"status": "resting"}
+        if ticker:
+            params["ticker"] = ticker
+        data = self._get("/portfolio/orders", params)
+        return data.get("orders", [])
+
     def parse_brackets(self, markets: list) -> list:
         brackets = []
         for market in markets:
-            yes_bid = cents_to_decimal(market.get("yes_bid")) or dollars_to_decimal(market.get("yes_bid_dollars"))
-            no_bid = cents_to_decimal(market.get("no_bid")) or dollars_to_decimal(market.get("no_bid_dollars"))
-            yes_last = cents_to_decimal(market.get("last_price")) or dollars_to_decimal(market.get("last_price_dollars"))
-            yes_ask = cents_to_decimal(market.get("yes_ask")) or dollars_to_decimal(market.get("yes_ask_dollars"))
-            no_ask = cents_to_decimal(market.get("no_ask")) or dollars_to_decimal(market.get("no_ask_dollars"))
+            # Use explicit None-check instead of `or` so that Decimal("0") (empty book,
+            # bid=0) is not treated as falsy and incorrectly replaced with the _dollars field.
+            def _coalesce(cents_val: Any, dollars_val: Any) -> Optional[Decimal]:
+                v = cents_to_decimal(cents_val)
+                return v if v is not None else dollars_to_decimal(dollars_val)
+
+            yes_bid = _coalesce(market.get("yes_bid"), market.get("yes_bid_dollars"))
+            no_bid = _coalesce(market.get("no_bid"), market.get("no_bid_dollars"))
+            yes_last = _coalesce(market.get("last_price"), market.get("last_price_dollars"))
+            yes_ask = _coalesce(market.get("yes_ask"), market.get("yes_ask_dollars"))
+            no_ask = _coalesce(market.get("no_ask"), market.get("no_ask_dollars"))
             if yes_ask is None and no_bid is not None:
                 yes_ask = Decimal("1.00") - no_bid
             if no_ask is None and yes_bid is not None:
@@ -161,7 +231,7 @@ class KalshiClient:
     @staticmethod
     def _bracket_label(strike_lo: Any, strike_hi: Any, bracket_type: str) -> str:
         if bracket_type == "wing_low":
-            return f"<={strike_hi}F"
+            return f"<{strike_hi}F"  # Kalshi settles strictly less than cap_strike
         if bracket_type == "wing_high":
             return f">={strike_lo}F"
         return f"{strike_lo}-{strike_hi}F"
@@ -235,10 +305,24 @@ class KalshiWebSocket:
         )
 
     async def run(self, callback: Callable[[dict], Any]):
-        if self.ws is None:
-            await self.connect()
-        async for raw in self.ws:
-            msg = json.loads(raw)
-            result = callback(msg)
-            if asyncio.iscoroutine(result):
-                await result
+        """Run the WebSocket loop with automatic reconnect on any error."""
+        backoff = 1
+        while True:
+            try:
+                if self.ws is None:
+                    await self.connect()
+                async for raw in self.ws:
+                    msg = json.loads(raw)
+                    result = callback(msg)
+                    if asyncio.iscoroutine(result):
+                        await result
+                # Clean server-side close — reconnect
+                logger.info("KalshiWebSocket: server closed connection, reconnecting in %ss", backoff)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("KalshiWebSocket error: %s. Reconnecting in %ss", exc, backoff)
+            finally:
+                self.ws = None
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)

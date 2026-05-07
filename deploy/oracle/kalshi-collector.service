@@ -1,0 +1,17 @@
+[Unit]
+Description=Kalshi weather market data collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/prediction-market-analysis
+EnvironmentFile=/etc/kalshi-paper.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/.local/bin/uv run python main.py --collect-only
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

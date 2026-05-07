@@ -35,4 +35,5 @@ cd "${REPO_DIR}"
 /home/ubuntu/.local/bin/uv sync --frozen
 
 sudo install -o root -g root -m 0644 deploy/oracle/kalshi-paper.service /etc/systemd/system/kalshi-paper.service
+sudo install -o root -g root -m 0644 deploy/oracle/kalshi-collector.service /etc/systemd/system/kalshi-collector.service
 sudo systemctl daemon-reload

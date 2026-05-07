@@ -22,7 +22,7 @@ import requests
 from scipy.stats import gumbel_r
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -43,6 +43,25 @@ IEM_DAILY_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/daily.py"
 OPEN_METEO_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 
 NY_TZ = ZoneInfo("America/New_York")
+
+# City-specific config — overridden at startup by --city arg
+CITY_CODE: str = "KNYC"
+SERIES_TICKER: str = "KXHIGHNY"
+CITY_TZ: ZoneInfo = NY_TZ
+CITY_LAT: float = 40.7789
+CITY_LON: float = -73.9692
+IEM_STATION: str = "NYC"
+IEM_NETWORK: str = "NY_ASOS"
+
+IEM_STATION_MAP: dict[str, tuple[str, str]] = {
+    "KNYC": ("NYC", "NY_ASOS"),
+    "KPHL": ("PHL", "PA_ASOS"),
+    "KMDW": ("MDW", "IL_ASOS"),
+    "KMIA": ("MIA", "FL_ASOS"),
+    "KAUS": ("AUS", "TX_ASOS"),
+    "KDEN": ("DEN", "CO_ASOS"),
+    "KLAX": ("LAX", "CA_ASOS"),
+}
 START_DATE = date(2024, 10, 1)
 END_DATE = date(2026, 4, 25)
 DEFAULT_CORE_GAP_PP = float(config.MIN_GAP_PP)
@@ -284,13 +303,13 @@ def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
 
 
 def fetch_kalshi_markets() -> pd.DataFrame:
-    log("Fetching settled KXHIGHNY markets from Kalshi...")
+    log(f"Fetching settled {SERIES_TICKER} markets from Kalshi...")
     rows: list[dict] = []
     for endpoint in ("/markets", "/historical/markets"):
         cursor = None
         endpoint_rows = 0
         while True:
-            params = {"series_ticker": "KXHIGHNY", "status": "settled", "limit": 100}
+            params = {"series_ticker": SERIES_TICKER, "status": "settled", "limit": 100}
             if cursor:
                 params["cursor"] = cursor
             data = request_json(f"{KALSHI_BASE}{endpoint}", params=params)
@@ -400,7 +419,7 @@ def target_price_times(markets: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for _, market in markets.iterrows():
         target_date = str(market["target_date"])
-        target_day = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=NY_TZ)
+        target_day = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=CITY_TZ)
         rows.append(
             {
                 "ticker": market["ticker"],
@@ -426,7 +445,7 @@ def fetch_kalshi_prices_from_api(markets: pd.DataFrame) -> pd.DataFrame:
         end_ts = iso_to_ts(market.get("close_time"))
         if start_ts is None or end_ts is None:
             target_date = str(market["target_date"])
-            target_start = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=NY_TZ)
+            target_start = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=CITY_TZ)
             start_ts = int((target_start - timedelta(days=1, hours=2)).timestamp())
             end_ts = int((target_start + timedelta(days=1)).timestamp())
         params = {
@@ -438,7 +457,7 @@ def fetch_kalshi_prices_from_api(markets: pd.DataFrame) -> pd.DataFrame:
         raw_candles = []
         try:
             data = request_json(
-                f"{KALSHI_BASE}/series/KXHIGHNY/markets/{ticker}/candlesticks",
+                f"{KALSHI_BASE}/series/{SERIES_TICKER}/markets/{ticker}/candlesticks",
                 params,
             )
             raw_candles = data.get("candlesticks", data.get("candles", []))
@@ -459,7 +478,7 @@ def fetch_kalshi_prices_from_api(markets: pd.DataFrame) -> pd.DataFrame:
                 candles.append((ts, price))
 
         target_date = str(market["target_date"])
-        target_day = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=NY_TZ)
+        target_day = datetime.fromisoformat(f"{target_date}T00:00:00").replace(tzinfo=CITY_TZ)
         row = {"ticker": ticker, "target_date": target_date, "price_source": "kalshi_candlesticks"}
         for label, clock in ENTRY_TIMES.items():
             target_local = None if clock is None else target_day.replace(hour=clock.hour, minute=clock.minute)
@@ -491,10 +510,10 @@ def fetch_kalshi_prices(markets: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_iem_actuals() -> pd.DataFrame:
-    log("Fetching KNYC daily max temperatures from IEM...")
+    log(f"Fetching {CITY_CODE} daily max temperatures from IEM...")
     params = {
-        "station": "NYC",
-        "network": "NY_ASOS",
+        "station": IEM_STATION,
+        "network": IEM_NETWORK,
         "year1": START_DATE.year,
         "month1": START_DATE.month,
         "day1": START_DATE.day,
@@ -521,14 +540,14 @@ def fetch_iem_actuals() -> pd.DataFrame:
 def fetch_open_meteo() -> pd.DataFrame:
     log("Fetching historical Open-Meteo model forecasts...")
     params = {
-        "latitude": 40.7789,
-        "longitude": -73.9692,
+        "latitude": CITY_LAT,
+        "longitude": CITY_LON,
         "start_date": START_DATE.isoformat(),
         "end_date": (END_DATE - timedelta(days=1)).isoformat(),
         "daily": "temperature_2m_max",
         # Open-Meteo expects repeated models=params, not a comma-separated string.
         "models": ["gfs_seamless", "ecmwf_ifs025", "ukmo_seamless", "ncep_nbm_conus"],
-        "timezone": "America/New_York",
+        "timezone": str(CITY_TZ),
         "temperature_unit": "fahrenheit",
     }
     data = request_json(OPEN_METEO_URL, params=params, timeout=60)
@@ -1393,7 +1412,7 @@ def print_summary(summary: dict) -> None:
     print("\n=== BACKTEST RESULTS: Oct 2024 - Apr 2026 ===\n")
     print("METHODOLOGY:")
     print("  Settlement/P&L source: Kalshi market result field")
-    print("  IEM KNYC temperatures: diagnostics/model-error analysis only")
+    print(f"  IEM {CITY_CODE} temperatures: diagnostics/model-error analysis only")
     print("  Forecast vintage warning: Open-Meteo file has one daily row, so timing tests reuse same forecast values")
     print(
         "  Rows dropped due to vintage violations: "
@@ -1455,10 +1474,10 @@ def print_summary(summary: dict) -> None:
     for bucket, item in summary["entry_price_buckets"].items():
         print(f"  {bucket}: {item['trades']} trades, win rate {item['win_rate']:.1%}, P&L ${item['net_pnl']:.2f}")
 
-    print("\nMODEL ACCURACY for KNYC:")
+    print(f"\nMODEL ACCURACY for {CITY_CODE}:")
     for item in summary["model_accuracy"]:
         print(f"  {item['model'].upper()} MAE: {item['mae']:.1f}°F, Bias: {item['bias']:.1f}°F")
-    print(f"  Best model for KNYC: {summary['best_model']}")
+    print(f"  Best model for {CITY_CODE}: {summary['best_model']}")
 
     print("\nSLEEVE RESULTS:")
     for sleeve in ["TAIL_NO", "DEEP_TAIL_NO"]:
@@ -1630,10 +1649,41 @@ def build_summary(engine: BacktestEngine, trades: pd.DataFrame) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Backtest KXHIGHNY weather strategy on historical data.")
+    global CITY_CODE, SERIES_TICKER, CITY_TZ, CITY_LAT, CITY_LON, IEM_STATION, IEM_NETWORK
+    global MARKETS_CSV, PRICES_CSV, ACTUALS_CSV, OPEN_METEO_CSV, RESULTS_CSV, SUMMARY_JSON
+
+    parser = argparse.ArgumentParser(description="Backtest weather high-temp strategy on historical data.")
+    parser.add_argument("--city", default="KNYC", help="Station code from config.CITIES (e.g. KNYC, KMDW, KPHL).")
     parser.add_argument("--refresh", action="store_true", help="Re-download all source datasets before running.")
     parser.add_argument("--skip-fetch", action="store_true", help="Use existing CSVs only; fail if any are missing.")
     args = parser.parse_args()
+
+    if args.city not in config.CITIES:
+        print(f"Unknown city '{args.city}'. Valid options: {list(config.CITIES.keys())}", file=sys.stderr)
+        return 2
+
+    city_cfg = config.CITIES[args.city]
+    CITY_CODE = args.city
+    SERIES_TICKER = city_cfg["series_ticker"]
+    CITY_TZ = ZoneInfo(city_cfg["timezone"])
+    CITY_LAT = city_cfg["lat"]
+    CITY_LON = city_cfg["lon"]
+    IEM_STATION, IEM_NETWORK = IEM_STATION_MAP.get(args.city, (args.city.lstrip("K"), "ASOS"))
+
+    city_lower = args.city.lower()
+    series_lower = SERIES_TICKER.lower()
+    MARKETS_CSV = DATA_DIR / f"{series_lower}_markets.csv"
+    PRICES_CSV = DATA_DIR / f"{series_lower}_prices.csv"
+    # KNYC uses legacy filenames without city prefix for backwards-compat
+    if args.city == "KNYC":
+        ACTUALS_CSV = DATA_DIR / "knyc_actual_temps.csv"
+        OPEN_METEO_CSV = DATA_DIR / "open_meteo_historical.csv"
+    else:
+        ACTUALS_CSV = DATA_DIR / f"{city_lower}_actual_temps.csv"
+        OPEN_METEO_CSV = DATA_DIR / f"open_meteo_{city_lower}_historical.csv"
+    RESULTS_CSV = DATA_DIR / f"research/{city_lower}_backtest_results.csv"
+    SUMMARY_JSON = DATA_DIR / f"research/{city_lower}_backtest_summary.json"
+    RESULTS_CSV.parent.mkdir(parents=True, exist_ok=True)
 
     missing = [path for path in [MARKETS_CSV, PRICES_CSV, ACTUALS_CSV, OPEN_METEO_CSV] if not path.exists()]
     if args.skip_fetch and missing:
